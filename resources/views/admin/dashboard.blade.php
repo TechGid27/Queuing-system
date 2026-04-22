@@ -11,7 +11,7 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Waiting</div>
-            <div class="text-2xl font-black text-yellow-600 leading-tight">{{ $waitingCount }}</div>
+            <div class="text-2xl font-black text-yellow-600 leading-tight" id="stat-waiting">{{ $waitingCount }}</div>
         </div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
@@ -20,7 +20,7 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Serving</div>
-            <div class="text-2xl font-black text-blue-600 leading-tight">{{ $currentServing ? 1 : 0 }}</div>
+            <div class="text-2xl font-black text-blue-600 leading-tight" id="stat-serving">{{ $currentServing ? 1 : 0 }}</div>
         </div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
@@ -29,7 +29,7 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Completed</div>
-            <div class="text-2xl font-black text-green-600 leading-tight">{{ $completedCount }}</div>
+            <div class="text-2xl font-black text-green-600 leading-tight" id="stat-completed">{{ $completedCount }}</div>
         </div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
@@ -38,7 +38,7 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">No Response</div>
-            <div class="text-2xl font-black text-red-600 leading-tight">{{ $skippedCount }}</div>
+            <div class="text-2xl font-black text-red-600 leading-tight" id="stat-skipped">{{ $skippedCount }}</div>
         </div>
     </div>
 </div>
@@ -55,6 +55,7 @@
             </span>
         </div>
 
+        <div id="now-serving-panel">
         @if($currentServing)
             <div class="text-center py-4">
                 <div class="ticket-xl text-primary mb-3">{{ $currentServing->ticket_number }}</div>
@@ -100,15 +101,16 @@
                 </form>
             </div>
         @endif
+        </div>{{-- #now-serving-panel --}}
     </div>
 
     {{-- Waiting List --}}
     <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col">
         <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 class="text-sm font-bold text-slate-800">Waiting List</h2>
-            <span class="bg-yellow-50 text-yellow-700 text-xs font-bold px-2.5 py-1 rounded-full">{{ $waitingCount }} in queue</span>
+            <span id="waiting-badge" class="bg-yellow-50 text-yellow-700 text-xs font-bold px-2.5 py-1 rounded-full">{{ $waitingCount }} in queue</span>
         </div>
-        <div class="overflow-y-auto flex-1">
+        <div class="overflow-y-auto flex-1" id="waiting-list-body">
             @forelse($waitingStudents as $i => $student)
                 @php $position = ($waitingStudents->currentPage() - 1) * $waitingStudents->perPage() + $i + 1; @endphp
                 <div class="flex items-center gap-3 px-5 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
@@ -178,11 +180,4 @@
 </div>
 @endsection
 
-@section('scripts')
-<script>
-    setInterval(() => {
-        const el = document.getElementById('topbar-clock');
-        if (el) el.innerText = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    }, 1000);
-</script>
-@endsection
+@include('admin.dashboard_realtime')

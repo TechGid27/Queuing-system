@@ -124,14 +124,9 @@
 
 @section('scripts')
 <script>
-if (window.PUSHER_APP_KEY) {
-    const pusher = new Pusher(window.PUSHER_APP_KEY, {
-        cluster: window.PUSHER_APP_CLUSTER || 'mt1',
-        forceTLS: window.PUSHER_SCHEME === 'https',
-    });
-
-    // Queue updates
-    pusher.subscribe('queue').bind('queue.updated', function(data) {
+// Use the global Echo instance from layout (no duplicate Pusher connection)
+if (window.Echo) {
+    window.Echo.channel('queue').listen('.queue.updated', function(data) {
         const currentEl = document.getElementById('current-number');
         const nextEl    = document.getElementById('next-number');
         const waitEl    = document.getElementById('waiting-count');
@@ -142,101 +137,78 @@ if (window.PUSHER_APP_KEY) {
             currentEl.style.transition = 'opacity .2s';
             setTimeout(() => { currentEl.innerText = data.current; currentEl.style.opacity = '1'; }, 200);
         }
-        if (nextEl && data.next) nextEl.innerText = data.next;
+        if (nextEl) nextEl.innerText = data.next ?? '--';
         if (waitEl && data.waiting_count !== undefined) waitEl.innerText = data.waiting_count;
-        if (estEl && data.waiting_count !== undefined) estEl.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : '--';
+        if (estEl  && data.waiting_count !== undefined) estEl.innerText  = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : '--';
 
-        // Real-time ticket status update
         const myTicketEl = document.getElementById('my-ticket-number');
         const myStatusEl = document.getElementById('my-ticket-status');
-        if (myTicketEl && myStatusEl && data.current === myTicketEl.innerText.trim()) {
+        if (!myTicketEl || !myStatusEl) return;
+
+        const myTicket = myTicketEl.innerText.trim();
+
+        // My turn
+        if (data.current === myTicket) {
             myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-green-100 text-green-700';
             myStatusEl.innerText = '🟢 YOUR TURN NOW!';
             showToast("🔔 It's your turn! Please proceed to the window.", 'success');
         }
-    });
 
-    // Purpose updates - real-time dropdown updates
-    pusher.subscribe('purposes').bind('purposes.updated', function(data) {
-        console.log('Purposes updated:', data);
-        const purposeSelect = document.querySelector('select[name="purpose_id"]');
-        if (purposeSelect && data.purposes) {
-            const currentValue = purposeSelect.value;
-            
-            // Clear existing options except the first one
-            purposeSelect.innerHTML = '<option value="">Choose one...</option>';
-            
-            // Add updated purposes (only active ones)
-            data.purposes.forEach(purpose => {
-                if (purpose.is_active) {
-                    const option = document.createElement('option');
-                    option.value = purpose.id;
-                    option.textContent = purpose.name;
-                    if (purpose.id == currentValue) {
-                        option.selected = true;
-                    }
-                    purposeSelect.appendChild(option);
-                }
-            });
-            
-            // Show notification if purposes were updated
-            showToast("📋 Purpose options updated!", 'info');
+        // Completed
+        if (data.completed_ticket === myTicket) {
+            myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-blue-100 text-blue-700';
+            myStatusEl.innerText = '✅ COMPLETED';
+            showToast("✅ Your transaction is done. Thank you for visiting!", 'success');
+        }
+
+        // Skipped
+        if (data.skipped_ticket === myTicket) {
+            myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-red-100 text-red-700';
+            myStatusEl.innerText = '⚠️ SKIPPED';
+            showToast("⚠️ You were skipped. Please re-queue at the window.", 'warning');
         }
     });
+
+    window.Echo.channel('purposes').listen('.purposes.updated', function(data) {
+        const purposeSelect = document.querySelector('select[name="purpose_id"]');
+        if (!purposeSelect || !data.purposes) return;
+        const currentValue = purposeSelect.value;
+        purposeSelect.innerHTML = '<option value="">Choose one...</option>';
+        data.purposes.forEach(purpose => {
+            if (purpose.is_active) {
+                const option = document.createElement('option');
+                option.value = purpose.id;
+                option.textContent = purpose.name;
+                if (purpose.id == currentValue) option.selected = true;
+                purposeSelect.appendChild(option);
+            }
+        });
+        showToast("📋 Purpose options updated!", 'success');
+    });
+
 } else {
+    // Fallback polling
     setInterval(() => {
         fetch('{{ route("api.queueStatus") }}').then(r => r.json()).then(data => {
             const c = document.getElementById('current-number');
             const n = document.getElementById('next-number');
             if (c && data.current) c.innerText = data.current;
-            if (n && data.next) n.innerText = data.next;
+            if (n && data.next)    n.innerText = data.next;
         });
-        
-        // Also poll for purpose updates
         fetch('{{ route("api.purposes") }}').then(r => r.json()).then(data => {
             const purposeSelect = document.querySelector('select[name="purpose_id"]');
-            if (purposeSelect && data.purposes) {
-                const currentValue = purposeSelect.value;
-                purposeSelect.innerHTML = '<option value="">Choose one...</option>';
-                
-                data.purposes.forEach(purpose => {
-                    const option = document.createElement('option');
-                    option.value = purpose.id;
-                    option.textContent = purpose.name;
-                    if (purpose.id == currentValue) {
-                        option.selected = true;
-                    }
-                    purposeSelect.appendChild(option);
-                });
-            }
+            if (!purposeSelect || !data.purposes) return;
+            const currentValue = purposeSelect.value;
+            purposeSelect.innerHTML = '<option value="">Choose one...</option>';
+            data.purposes.forEach(purpose => {
+                const option = document.createElement('option');
+                option.value = purpose.id;
+                option.textContent = purpose.name;
+                if (purpose.id == currentValue) option.selected = true;
+                purposeSelect.appendChild(option);
+            });
         });
     }, 5000);
-}
-
-// Toast notification function
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-white text-sm font-medium shadow-lg transition-all duration-300 transform translate-x-full ${
-        type === 'success' ? 'bg-green-500' : 
-        type === 'error' ? 'bg-red-500' : 
-        'bg-blue-500'
-    }`;
-    toast.textContent = message;
-    
-    document.body.appendChild(toast);
-    
-    // Slide in
-    setTimeout(() => {
-        toast.style.transform = 'translateX(0)';
-    }, 100);
-    
-    // Slide out and remove
-    setTimeout(() => {
-        toast.style.transform = 'translateX(full)';
-        setTimeout(() => {
-            document.body.removeChild(toast);
-        }, 300);
-    }, 3000);
 }
 </script>
 <style>

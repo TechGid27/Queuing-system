@@ -20,15 +20,14 @@ class AutoSkipQueue extends Command
             ->get();
 
         foreach ($servingStudents as $student) {
-            $student->update(['status' => 'no_response']);
+            $student->update(['status' => 'no_response', 'completed_at' => now()]);
             $this->info("Student {$student->ticket_number} auto-skipped due to inactivity.");
 
-            // SMS: notify skipped student
             if ($student->phone_number) {
                 $sms->sendSkippedNotification($student->phone_number, $student->ticket_number);
             }
 
-            // Call next waiting student
+            $skippedTicket = $student->ticket_number;
             $nextStudent = QueueEntry::where('status', 'waiting')
                 ->orderBy('id', 'asc')
                 ->first();
@@ -42,17 +41,15 @@ class AutoSkipQueue extends Command
                 Cache::forever('current_serving_number', $nextStudent->ticket_number);
                 $this->info("Automatically called next student: {$nextStudent->ticket_number}");
 
-                // SMS: notify student now being served
                 if ($nextStudent->phone_number) {
                     $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
                 }
 
-                // SMS: notify the new next-in-line to prepare (fix #5: different from just-called)
                 $upNext = QueueEntry::where('status', 'waiting')
                     ->orderBy('id', 'asc')
                     ->first();
 
-                if ($upNext && $upNext->phone_number && $upNext->id !== $nextStudent->id) {
+                if ($upNext?->phone_number) {
                     $sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
                 }
             } else {
@@ -60,13 +57,12 @@ class AutoSkipQueue extends Command
                 $this->info('Queue is now empty.');
             }
 
-            // Broadcast updated state
             $current      = Cache::get('current_serving_number', '--');
             $nextPerson   = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();
             $next         = $nextPerson ? $nextPerson->ticket_number : '--';
             $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
-            event(new QueueUpdated($current, $next, $waitingCount));
+            event(new QueueUpdated($current, $next, $waitingCount, null, $skippedTicket));
         }
 
         return Command::SUCCESS;

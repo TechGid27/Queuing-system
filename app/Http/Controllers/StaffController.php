@@ -7,6 +7,7 @@ use App\Models\QueueEntry;
 use App\Events\QueueUpdated;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class StaffController extends Controller
@@ -20,7 +21,7 @@ class StaffController extends Controller
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    private function broadcastQueueState(): void
+    private function broadcastQueueState(?string $completedTicket = null, ?string $skippedTicket = null): void
     {
         $current = Cache::get('current_serving_number', '--');
 
@@ -31,7 +32,7 @@ class StaffController extends Controller
         $next         = $nextPerson ? $nextPerson->ticket_number : '--';
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
-        event(new QueueUpdated($current, $next, $waitingCount));
+        event(new QueueUpdated($current, $next, $waitingCount, $completedTicket, $skippedTicket));
     }
 
     // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -54,52 +55,62 @@ class StaffController extends Controller
 
     public function callNext()
     {
-        $nextStudent = QueueEntry::where('status', 'waiting')
-            ->orderBy('id', 'asc')
-            ->first();
+        $completedTicket = null;
+
+        $nextStudent = DB::transaction(function () use (&$completedTicket) {
+            // Lock the first waiting student so concurrent requests can't grab the same one
+            $next = QueueEntry::where('status', 'waiting')
+                ->orderBy('id', 'asc')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $next) {
+                return null;
+            }
+
+            // Complete the currently serving student
+            $serving = QueueEntry::where('status', 'serving')->lockForUpdate()->first();
+            if ($serving) {
+                $serving->update([
+                    'status'       => 'completed',
+                    'completed_at' => now(),
+                ]);
+                $completedTicket = $serving->ticket_number;
+            }
+
+            // Mark next student as serving
+            $next->update([
+                'status'    => 'serving',
+                'served_at' => now(),
+            ]);
+
+            Cache::forever('current_serving_number', $next->ticket_number);
+
+            return $next;
+        });
 
         if (! $nextStudent) {
             return back()->with('warning', 'No Students Waiting');
         }
 
-        // Complete the currently serving student
-        $serving = QueueEntry::where('status', 'serving')->first();
-        if ($serving) {
-            $serving->update([
-                'status'       => 'completed',
-                'completed_at' => now(),
-            ]);
-
-            // SMS: notify completed student
-            if ($serving->phone_number) {
-                $this->sms->sendCompletedNotification($serving->phone_number, $serving->ticket_number);
+        // SMS outside transaction (non-critical, can fail without rolling back)
+        if ($completedTicket) {
+            $prevServing = QueueEntry::where('ticket_number', $completedTicket)->first();
+            if ($prevServing?->phone_number) {
+                $this->sms->sendCompletedNotification($prevServing->phone_number, $completedTicket);
             }
         }
 
-        // Mark next student as serving
-        $nextStudent->update([
-            'status'    => 'serving',
-            'served_at' => now(),
-        ]);
-
-        Cache::forever('current_serving_number', $nextStudent->ticket_number);
-
-        // SMS: notify the student now being served
         if ($nextStudent->phone_number) {
             $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
         }
 
-        // SMS: notify the NEW next-in-line (2nd in queue) to prepare
-        // Fix #5: only send if this is a different student from the one just called
-        $upNext = QueueEntry::where('status', 'waiting')
-            ->orderBy('id', 'asc')
-            ->first();
-
-        if ($upNext && $upNext->phone_number && $upNext->id !== $nextStudent->id) {
+        $upNext = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();
+        if ($upNext?->phone_number) {
             $this->sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
         }
 
-        $this->broadcastQueueState();
+        $this->broadcastQueueState($completedTicket);
 
         return back()->with('success', "Now serving: {$nextStudent->ticket_number}");
     }
@@ -112,12 +123,11 @@ class StaffController extends Controller
             'completed_at' => now(),
         ]);
 
-        // SMS: notify student their transaction is done
         if ($student->phone_number) {
             $this->sms->sendCompletedNotification($student->phone_number, $student->ticket_number);
         }
 
-        $this->broadcastQueueState();
+        $this->broadcastQueueState($student->ticket_number);
 
         return back()->with('success', 'Student completed.');
     }
@@ -125,26 +135,44 @@ class StaffController extends Controller
     public function reject($id)
     {
         $student = QueueEntry::findOrFail($id);
-        $student->update(['status' => 'no_response']);
+        $student->update(['status' => 'no_response', 'completed_at' => now()]);
 
-        // SMS: notify student they were skipped
         if ($student->phone_number) {
             $this->sms->sendSkippedNotification($student->phone_number, $student->ticket_number);
         }
 
-        // SMS: notify the new next-in-line to prepare
-        // Fix #5: only send if different from the one just skipped
-        $upNext = QueueEntry::where('status', 'waiting')
-            ->orderBy('id', 'asc')
-            ->first();
-
-        if ($upNext && $upNext->phone_number && $upNext->id !== $student->id) {
+        $upNext = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();
+        if ($upNext?->phone_number) {
             $this->sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
         }
 
-        $this->broadcastQueueState();
+        $this->broadcastQueueState(null, $student->ticket_number);
 
         return back()->with('success', 'Student skipped.');
+    }
+
+    // ─── API: Waiting List ────────────────────────────────────────────────────
+
+    public function waitingList()
+    {
+        $waitingStudents = QueueEntry::where('status', 'waiting')
+            ->orderBy('id', 'asc')
+            ->get(['id', 'ticket_number', 'name', 'purpose']);
+
+        $currentServing = QueueEntry::where('status', 'serving')
+            ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number']);
+
+        $waitingCount   = $waitingStudents->count();
+        $completedCount = QueueEntry::where('status', 'completed')->whereDate('created_at', now()->today())->count();
+        $skippedCount   = QueueEntry::where('status', 'no_response')->whereDate('created_at', now()->today())->count();
+
+        return response()->json([
+            'waiting'        => $waitingStudents,
+            'current'        => $currentServing,
+            'waiting_count'  => $waitingCount,
+            'completed_count'=> $completedCount,
+            'skipped_count'  => $skippedCount,
+        ]);
     }
 
     // ─── Reports ─────────────────────────────────────────────────────────────

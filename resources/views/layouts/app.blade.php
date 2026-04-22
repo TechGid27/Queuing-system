@@ -208,5 +208,6 @@
     @keyframes slideIn { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
 </style>
 @yield('scripts')
+@stack('scripts')
 </body>
 </html>

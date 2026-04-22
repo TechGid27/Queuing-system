@@ -39,6 +39,8 @@ Route::middleware(['auth', 'is_staff'])->group(function () {
     Route::get('/admin/reports', [StaffController::class, 'reports'])->name('admin.reports');
     Route::get('/admin/reports/download', [StaffController::class, 'downloadReport'])->name('admin.reports.download');
 
+    Route::get('/admin/waiting-list', [StaffController::class, 'waitingList'])->name('admin.waitingList');
+
     // Purpose Management
     Route::resource('/admin/purposes', PurposeController::class)
         ->only(['index', 'store', 'update', 'destroy'])
