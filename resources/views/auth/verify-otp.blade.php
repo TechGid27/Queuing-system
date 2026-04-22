@@ -56,7 +56,7 @@
         </div>
 
         <div class="text-center mt-4">
-            <a href="{{ route('student.register') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+            <a href="{{ route('register') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
                 ← Back to Registration
             </a>
         </div>
