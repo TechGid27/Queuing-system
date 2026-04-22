@@ -58,6 +58,12 @@
             </p>
         </div>
 
+        <div class="text-center mt-4">
+            <a href="{{ route('home') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+                ← Back to Home
+            </a>
+        </div>
+
     </div>
 </div>
 @endsection
