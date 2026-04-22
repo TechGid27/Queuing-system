@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Purpose;
+use App\Events\PurposesUpdated;
 
 class PurposeController extends Controller
 {
@@ -25,6 +26,9 @@ class PurposeController extends Controller
             'is_active' => true,
         ]);
 
+        // Broadcast real-time update
+        broadcast(new PurposesUpdated());
+
         return back()->with('success', 'Purpose added successfully!');
     }
 
@@ -32,12 +36,32 @@ class PurposeController extends Controller
     {
         $purpose = Purpose::findOrFail($id);
         $purpose->update(['is_active' => $request->is_active]);
+        
+        // Broadcast real-time update
+        broadcast(new PurposesUpdated());
+        
         return back()->with('success', 'Purpose status updated!');
     }
 
     public function destroy($id)
     {
         Purpose::findOrFail($id)->delete();
+        
+        // Broadcast real-time update
+        broadcast(new PurposesUpdated());
+        
         return back()->with('success', 'Purpose removed!');
+    }
+
+    // ─── API: Get Active Purposes (for real-time updates) ────────────────────
+
+    public function getActivePurposes()
+    {
+        $purposes = Purpose::where('is_active', true)->orderBy('name', 'asc')->get();
+        
+        return response()->json([
+            'purposes' => $purposes,
+            'timestamp' => now()->timestamp,
+        ]);
     }
 }

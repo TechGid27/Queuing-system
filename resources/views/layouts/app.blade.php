@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'ACLC Queue System') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -21,12 +22,22 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
         window.PUSHER_HOST        = "{{ config('broadcasting.connections.pusher.options.host', '') }}";
         window.PUSHER_PORT        = "{{ config('broadcasting.connections.pusher.options.port', 443) }}";
         window.PUSHER_SCHEME      = "{{ config('broadcasting.connections.pusher.options.scheme', 'https') }}";
+        
+        // Initialize Laravel Echo with Pusher
+        window.Pusher = Pusher;
+        window.Echo = new Echo({
+            broadcaster: 'pusher',
+            key: window.PUSHER_APP_KEY,
+            cluster: window.PUSHER_APP_CLUSTER,
+            forceTLS: window.PUSHER_SCHEME === 'https',
+        });
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; }

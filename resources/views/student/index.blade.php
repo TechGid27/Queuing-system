@@ -130,6 +130,7 @@ if (window.PUSHER_APP_KEY) {
         forceTLS: window.PUSHER_SCHEME === 'https',
     });
 
+    // Queue updates
     pusher.subscribe('queue').bind('queue.updated', function(data) {
         const currentEl = document.getElementById('current-number');
         const nextEl    = document.getElementById('next-number');
@@ -154,6 +155,34 @@ if (window.PUSHER_APP_KEY) {
             showToast("🔔 It's your turn! Please proceed to the window.", 'success');
         }
     });
+
+    // Purpose updates - real-time dropdown updates
+    pusher.subscribe('purposes').bind('purposes.updated', function(data) {
+        console.log('Purposes updated:', data);
+        const purposeSelect = document.querySelector('select[name="purpose_id"]');
+        if (purposeSelect && data.purposes) {
+            const currentValue = purposeSelect.value;
+            
+            // Clear existing options except the first one
+            purposeSelect.innerHTML = '<option value="">Choose one...</option>';
+            
+            // Add updated purposes (only active ones)
+            data.purposes.forEach(purpose => {
+                if (purpose.is_active) {
+                    const option = document.createElement('option');
+                    option.value = purpose.id;
+                    option.textContent = purpose.name;
+                    if (purpose.id == currentValue) {
+                        option.selected = true;
+                    }
+                    purposeSelect.appendChild(option);
+                }
+            });
+            
+            // Show notification if purposes were updated
+            showToast("📋 Purpose options updated!", 'info');
+        }
+    });
 } else {
     setInterval(() => {
         fetch('{{ route("api.queueStatus") }}').then(r => r.json()).then(data => {
@@ -162,7 +191,52 @@ if (window.PUSHER_APP_KEY) {
             if (c && data.current) c.innerText = data.current;
             if (n && data.next) n.innerText = data.next;
         });
+        
+        // Also poll for purpose updates
+        fetch('{{ route("api.purposes") }}').then(r => r.json()).then(data => {
+            const purposeSelect = document.querySelector('select[name="purpose_id"]');
+            if (purposeSelect && data.purposes) {
+                const currentValue = purposeSelect.value;
+                purposeSelect.innerHTML = '<option value="">Choose one...</option>';
+                
+                data.purposes.forEach(purpose => {
+                    const option = document.createElement('option');
+                    option.value = purpose.id;
+                    option.textContent = purpose.name;
+                    if (purpose.id == currentValue) {
+                        option.selected = true;
+                    }
+                    purposeSelect.appendChild(option);
+                });
+            }
+        });
     }, 5000);
+}
+
+// Toast notification function
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-white text-sm font-medium shadow-lg transition-all duration-300 transform translate-x-full ${
+        type === 'success' ? 'bg-green-500' : 
+        type === 'error' ? 'bg-red-500' : 
+        'bg-blue-500'
+    }`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // Slide in
+    setTimeout(() => {
+        toast.style.transform = 'translateX(0)';
+    }, 100);
+    
+    // Slide out and remove
+    setTimeout(() => {
+        toast.style.transform = 'translateX(full)';
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 300);
+    }, 3000);
 }
 </script>
 <style>

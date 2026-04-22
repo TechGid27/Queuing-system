@@ -7,6 +7,7 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use App\Models\Purpose;
 
 class PurposesUpdated implements ShouldBroadcastNow
 {
@@ -30,6 +31,7 @@ class PurposesUpdated implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         return [
+            'purposes' => Purpose::orderBy('name', 'asc')->get(),
             'timestamp' => now()->timestamp,
         ];
     }
