@@ -173,7 +173,7 @@
             <div class="shrink-0 px-7 pb-5 border-t border-white/10" style="background: rgba(255,255,255,.03); padding-top: 3.56rem;">
                 <div class="label-tag text-slate-400 mb-1">Est. Wait Time</div>
                 <div class="text-2xl font-black text-blue-400" id="tv-est-wait">
-                    {{ $waitingCount > 0 ? '~' . ($waitingCount * 5) . ' min' : '--' }}
+                    {{ $waitingCount > 0 ? '~' . ($waitingCount * 5) . ' min' : 'Waiting' }}
                 </div>
                 <div class="text-slate-600 text-xs mt-0.5">avg. 5 min per student</div>
             </div>
@@ -276,14 +276,14 @@ if (window.PUSHER_APP_KEY) {
             flashEl(currentEl);
         }
 
-        if (nextEl && data.next) nextEl.innerText = data.next;
+        if (nextEl && data.next) nextEl.innerText = data.next ?? 'Waiting';
 
         if (waitEl && data.waiting_count !== undefined) {
             waitEl.innerText = data.waiting_count;
         }
 
         if (estEl && data.waiting_count !== undefined) {
-            estEl.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : '--';
+            estEl.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : 'Waiting';
         }
 
         if (data.current_serving) {

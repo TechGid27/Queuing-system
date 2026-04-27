@@ -86,7 +86,7 @@ if (window.PUSHER_APP_KEY) {
         if (c && data.current) { c.style.opacity='.3'; c.style.transition='opacity .2s'; setTimeout(()=>{c.innerText=data.current;c.style.opacity='1';},200); }
         if (n && data.next) n.innerText = data.next;
         if (w && data.waiting_count !== undefined) w.innerText = data.waiting_count;
-        if (e && data.waiting_count !== undefined) e.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : '--';
+        if (e && data.waiting_count !== undefined) e.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : 'Waiting';
     });
 } else {
     setInterval(() => {

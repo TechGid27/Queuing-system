@@ -39,7 +39,7 @@
                         @if($waitingCount > 0)
                             ~{{ $waitingCount * 5 }} min
                         @else
-                            --
+                            Waiting
                         @endif
                     </div>
                     <div class="text-[11px] font-semibold text-blue-400 mt-0.5">Est. Wait (avg 5 min)</div>
@@ -137,9 +137,9 @@ if (window.Echo) {
             currentEl.style.transition = 'opacity .2s';
             setTimeout(() => { currentEl.innerText = data.current; currentEl.style.opacity = '1'; }, 200);
         }
-        if (nextEl) nextEl.innerText = data.next ?? '--';
+        if (nextEl) nextEl.innerText = data.next ?? 'Waiting';
         if (waitEl && data.waiting_count !== undefined) waitEl.innerText = data.waiting_count;
-        if (estEl  && data.waiting_count !== undefined) estEl.innerText  = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : '--';
+        if (estEl  && data.waiting_count !== undefined) estEl.innerText  = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : 'Waiting';
 
         const myTicketEl = document.getElementById('my-ticket-number');
         const myStatusEl = document.getElementById('my-ticket-status');

@@ -23,7 +23,7 @@ class QueueController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $next         = $nextPerson ? $nextPerson->ticket_number : '--';
+        $next         = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
         event(new QueueUpdated($current, $next, $waitingCount));
@@ -49,7 +49,7 @@ class QueueController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $nextNumber   = $nextPerson ? $nextPerson->ticket_number : '--';
+        $nextNumber   = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
         $waitingList = QueueEntry::where('status', 'waiting')
@@ -79,7 +79,7 @@ class QueueController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $nextNumber = $nextPerson ? $nextPerson->ticket_number : '--';
+        $nextNumber = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
         $myTicket = null;
@@ -113,7 +113,7 @@ class QueueController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $next = $nextPerson ? $nextPerson->ticket_number : '--';
+        $next = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
 
         return response()->json([
             'current' => $current,

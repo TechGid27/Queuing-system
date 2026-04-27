@@ -57,9 +57,9 @@ class AutoSkipQueue extends Command
                 $this->info('Queue is now empty.');
             }
 
-            $current      = Cache::get('current_serving_number', '--');
+            $current      = Cache::get('current_serving_number', 'Waiting');
             $nextPerson   = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();
-            $next         = $nextPerson ? $nextPerson->ticket_number : '--';
+            $next         = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
             $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
             event(new QueueUpdated($current, $next, $waitingCount, null, $skippedTicket));

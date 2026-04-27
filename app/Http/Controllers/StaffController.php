@@ -37,7 +37,7 @@ class StaffController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $next         = $nextPerson ? $nextPerson->ticket_number : '--';
+        $next         = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
         event(new QueueUpdated($current, $next, $waitingCount, $completedTicket, $skippedTicket));
