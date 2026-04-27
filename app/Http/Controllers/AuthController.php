@@ -89,10 +89,26 @@ class AuthController extends Controller
     {
         $request->validate([
             'name'         => 'required|string|max:255',
-            'email'        => 'required|email|max:255|unique:users',
-            'phone_number' => 'required|regex:/^09[0-9]{9}$/|unique:users,phone_number',
+            'email'        => 'required|email|max:255',
+            'phone_number' => 'required|regex:/^09[0-9]{9}$/',
             'password'     => 'required|min:8|confirmed',
         ]);
+
+        // Check if email is already taken by a verified user
+        $existingByEmail = User::where('email', $request->email)->first();
+        if ($existingByEmail && $existingByEmail->isPhoneVerified()) {
+            return back()->withErrors(['email' => 'This email is already registered.'])->withInput();
+        }
+
+        // Check if phone is already taken by a verified user
+        $existingByPhone = User::where('phone_number', $request->phone_number)->first();
+        if ($existingByPhone && $existingByPhone->isPhoneVerified()) {
+            return back()->withErrors(['phone_number' => 'This phone number is already registered.'])->withInput();
+        }
+
+        // If unverified account exists with same email or phone, delete it and re-register
+        User::where('email', $request->email)->whereNull('phone_verified_at')->delete();
+        User::where('phone_number', $request->phone_number)->whereNull('phone_verified_at')->delete();
 
         $user = User::create([
             'name'         => $request->name,
@@ -172,6 +188,15 @@ class AuthController extends Controller
         $request->validate([
             'phone' => 'required|regex:/^09[0-9]{9}$/',
         ]);
+
+        // Only send OTP if there's an unverified user with this phone
+        $user = User::where('phone_number', $request->phone)
+            ->whereNull('phone_verified_at')
+            ->first();
+
+        if (! $user) {
+            return back()->withErrors(['phone' => 'No pending verification found for this number.']);
+        }
 
         $key = 'otp-resend:' . $request->phone;
 

@@ -55,6 +55,12 @@ class StaffController extends Controller
 
     public function callNext()
     {
+        // Prevent accidental double-calls within 3 seconds (e.g. two staff clicking at once on a single-window setup)
+        if (Cache::has('call_next_lock')) {
+            return back()->with('warning', 'Please wait before calling the next student.');
+        }
+        Cache::put('call_next_lock', true, now()->addSeconds(3));
+
         $completedTicket = null;
 
         $nextStudent = DB::transaction(function () use (&$completedTicket) {
