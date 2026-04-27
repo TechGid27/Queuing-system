@@ -6,8 +6,8 @@
 
         {{-- Brand --}}
         <div class="text-center mb-6">
-            <div class="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white text-xl mx-auto mb-4">
-                <i class="bi bi-ticket-perforated-fill"></i>
+            <div class="w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
             </div>
             <h1 class="text-xl font-black text-slate-900">ACLC Queue System</h1>
             <p class="text-sm text-slate-400 mt-1">Registrar's Office — Mandaue</p>

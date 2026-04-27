@@ -29,6 +29,37 @@ class QueueController extends Controller
         event(new QueueUpdated($current, $next, $waitingCount));
     }
 
+    // ─── TV Display ──────────────────────────────────────────────────────────────
+
+    public function tv()
+    {
+        $currentNumber = Cache::get('current_serving_number');
+
+        if (! $currentNumber) {
+            $serving = QueueEntry::where('status', 'serving')->first();
+            $currentNumber = $serving ? $serving->ticket_number : '--';
+            if ($serving) {
+                Cache::forever('current_serving_number', $currentNumber);
+            }
+        }
+
+        $currentServing = QueueEntry::where('status', 'serving')->first();
+
+        $nextPerson = QueueEntry::where('status', 'waiting')
+            ->orderBy('id', 'asc')
+            ->first();
+
+        $nextNumber   = $nextPerson ? $nextPerson->ticket_number : '--';
+        $waitingCount = QueueEntry::where('status', 'waiting')->count();
+
+        $waitingList = QueueEntry::where('status', 'waiting')
+            ->orderBy('id', 'asc')
+            ->take(8)
+            ->get();
+
+        return view('tv', compact('currentNumber', 'currentServing', 'nextNumber', 'waitingCount', 'waitingList'));
+    }
+
     // ─── Index (Public + Student View) ────────────────────────────────────────
 
     public function index()

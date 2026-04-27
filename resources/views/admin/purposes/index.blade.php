@@ -192,33 +192,7 @@ function updatePurposesTable(purposes) {
     });
 }
 
-// Toast notification function
-function showToast(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `fixed top-4 right-4 z-50 px-4 py-3 rounded-lg text-white text-sm font-medium shadow-lg transition-all duration-300 transform translate-x-full ${
-        type === 'success' ? 'bg-green-500' : 
-        type === 'error' ? 'bg-red-500' : 
-        'bg-blue-500'
-    }`;
-    toast.textContent = message;
-    
-    document.body.appendChild(toast);
-    
-    // Slide in
-    setTimeout(() => {
-        toast.style.transform = 'translateX(0)';
-    }, 100);
-    
-    // Slide out and remove
-    setTimeout(() => {
-        toast.style.transform = 'translateX(full)';
-        setTimeout(() => {
-            if (document.body.contains(toast)) {
-                document.body.removeChild(toast);
-            }
-        }, 300);
-    }, 3000);
-}
+// Toast notification function — uses global showToast() from app.blade.php
 
 // Close modal when form is submitted successfully
 document.addEventListener('DOMContentLoaded', function() {

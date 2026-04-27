@@ -25,7 +25,7 @@
 
     <div class="summary">
         <strong>Total Transactions:</strong> {{ count($entries) }}<br>
-        <strong>Report Generated:</strong> {{ now()->format('Y-m-d h:i A') }}
+        <strong>Report Generated:</strong> {{ now()->format('F j, Y h:i A') }} (PHT)
     </div>
 
     <table>
@@ -37,6 +37,7 @@
                 <th>Status</th>
                 <th>Wait Start</th>
                 <th>Served At</th>
+                <th>Duration</th>
             </tr>
         </thead>
         <tbody>
@@ -48,6 +49,13 @@
                 <td class="{{ $entry->status }}">{{ ucfirst($entry->status) }}</td>
                 <td>{{ $entry->created_at->format('h:i A') }}</td>
                 <td>{{ $entry->served_at ? $entry->served_at->format('h:i A') : '--' }}</td>
+                <td>
+                    @if($entry->served_at && $entry->completed_at)
+                        {{ $entry->served_at->diffInMinutes($entry->completed_at) }} min
+                    @else
+                        --
+                    @endif
+                </td>
             </tr>
             @endforeach
         </tbody>

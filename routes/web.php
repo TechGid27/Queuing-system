@@ -8,6 +8,7 @@ use App\Http\Controllers\PurposeController;
 
 // ─── Public Queue Display ─────────────────────────────────────────────────────
 Route::get('/', [QueueController::class, 'index'])->name('home');
+Route::get('/tv', [QueueController::class, 'tv'])->name('tv');
 Route::get('/api/queue-status', [QueueController::class, 'getStatus'])->name('api.queueStatus');
 Route::get('/api/purposes', [PurposeController::class, 'getActivePurposes'])->name('api.purposes');
 

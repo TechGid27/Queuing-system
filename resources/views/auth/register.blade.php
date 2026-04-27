@@ -5,8 +5,8 @@
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 lg:p-8">
 
         {{-- Icon --}}
-        <div class="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white text-xl mx-auto mb-5">
-            <i class="bi bi-person-plus-fill"></i>
+        <div class="w-16 h-16 mx-auto mb-5 flex items-center justify-center">
+            <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
         </div>
 
         {{-- Header --}}
@@ -45,13 +45,15 @@
 
             <div>
                 <label class="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
-                <input type="text" name="phone_number" value="{{ old('phone_number') }}" required
+                <input type="text" name="phone_number" id="phone_number" value="{{ old('phone_number') }}" required
+                    maxlength="11" inputmode="numeric" autocomplete="tel"
                     class="w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition
                         {{ $errors->has('phone_number') ? 'border-red-400' : 'border-slate-200' }}"
                     placeholder="09xxxxxxxxx">
                 <p class="text-xs text-slate-400 mt-1">
                     <i class="bi bi-info-circle"></i> Used for SMS notifications & OTP verification
                 </p>
+                <p class="text-red-500 text-xs mt-1 hidden" id="phone-error">Must start with 09 and be exactly 11 digits.</p>
                 @error('phone_number')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
             </div>
 
@@ -86,4 +88,35 @@
 
     </div>
 </div>
+@endsection
+
+@section('scripts')
+<script>
+    const phoneInput = document.getElementById('phone_number');
+    const phoneError = document.getElementById('phone-error');
+
+    phoneInput.addEventListener('input', function () {
+        // Strip non-digits
+        this.value = this.value.replace(/\D/g, '').slice(0, 11);
+    });
+
+    phoneInput.addEventListener('blur', function () {
+        const val = this.value;
+        const valid = /^09[0-9]{9}$/.test(val);
+        phoneError.classList.toggle('hidden', valid || val === '');
+        this.classList.toggle('border-red-400', !valid && val !== '');
+        this.classList.toggle('border-slate-200', valid || val === '');
+    });
+
+    // Block form submit if phone invalid
+    phoneInput.closest('form').addEventListener('submit', function (e) {
+        const val = phoneInput.value;
+        if (!/^09[0-9]{9}$/.test(val)) {
+            e.preventDefault();
+            phoneError.classList.remove('hidden');
+            phoneInput.classList.add('border-red-400');
+            phoneInput.focus();
+        }
+    });
+</script>
 @endsection

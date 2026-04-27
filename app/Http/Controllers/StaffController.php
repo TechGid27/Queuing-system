@@ -23,7 +23,15 @@ class StaffController extends Controller
 
     private function broadcastQueueState(?string $completedTicket = null, ?string $skippedTicket = null): void
     {
-        $current = Cache::get('current_serving_number', '--');
+        $serving = QueueEntry::where('status', 'serving')->first();
+        $current = $serving ? $serving->ticket_number : 'Waiting';
+
+        // Keep cache in sync
+        if ($serving) {
+            Cache::forever('current_serving_number', $current);
+        } else {
+            Cache::forget('current_serving_number');
+        }
 
         $nextPerson = QueueEntry::where('status', 'waiting')
             ->orderBy('id', 'asc')
@@ -133,6 +141,11 @@ class StaffController extends Controller
             $this->sms->sendCompletedNotification($student->phone_number, $student->ticket_number);
         }
 
+        // Clear cache if no one else is serving
+        if (! QueueEntry::where('status', 'serving')->exists()) {
+            Cache::forget('current_serving_number');
+        }
+
         $this->broadcastQueueState($student->ticket_number);
 
         return back()->with('success', 'Student completed.');
@@ -145,6 +158,11 @@ class StaffController extends Controller
 
         if ($student->phone_number) {
             $this->sms->sendSkippedNotification($student->phone_number, $student->ticket_number);
+        }
+
+        // Clear cache if no one else is serving
+        if (! QueueEntry::where('status', 'serving')->exists()) {
+            Cache::forget('current_serving_number');
         }
 
         $upNext = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();

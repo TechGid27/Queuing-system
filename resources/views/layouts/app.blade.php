@@ -62,8 +62,13 @@
 <aside id="sidebar" class="fixed top-0 left-0 bottom-0 w-60 bg-slate-900 flex flex-col z-30 -translate-x-full lg:translate-x-0 transition-transform duration-200">
     {{-- Brand --}}
     <div class="px-5 py-6 border-b border-white/5">
-        <div class="text-white font-bold text-sm tracking-tight">ACLC Mandaue</div>
-        <div class="text-slate-400 text-xs mt-0.5">Cashier's Office</div>
+        <div class="flex items-center gap-2.5">
+            <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-8 h-8 object-contain shrink-0">
+            <div>
+                <div class="text-white font-bold text-sm tracking-tight">ACLC Mandaue</div>
+                <div class="text-slate-400 text-xs mt-0.5">Registrar's Office</div>
+            </div>
+        </div>
         <span class="inline-block mt-2 bg-primary text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Queue System</span>
     </div>
 

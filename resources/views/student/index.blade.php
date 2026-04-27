@@ -159,6 +159,7 @@ if (window.Echo) {
             myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-blue-100 text-blue-700';
             myStatusEl.innerText = '✅ COMPLETED';
             showToast("✅ Your transaction is done. Thank you for visiting!", 'success');
+            setTimeout(() => window.location.reload(), 4000);
         }
 
         // Skipped
@@ -166,6 +167,7 @@ if (window.Echo) {
             myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-red-100 text-red-700';
             myStatusEl.innerText = '⚠️ SKIPPED';
             showToast("⚠️ You were skipped. Please re-queue at the window.", 'warning');
+            setTimeout(() => window.location.reload(), 4000);
         }
     });
 

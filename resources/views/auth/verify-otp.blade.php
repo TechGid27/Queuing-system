@@ -3,8 +3,8 @@
 @section('content')
 <div class="w-full max-w-sm mx-auto">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 lg:p-8">
-        <div class="w-12 h-12 rounded-2xl bg-green-600 flex items-center justify-center text-white text-xl mx-auto mb-5">
-            <i class="bi bi-phone-fill"></i>
+        <div class="w-16 h-16 mx-auto mb-5 flex items-center justify-center">
+            <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
         </div>
         <div class="text-center mb-6">
             <h1 class="text-xl font-black text-slate-900">Verify Your Phone</h1>
@@ -30,11 +30,11 @@
                 <label class="block text-xs font-semibold text-slate-600 text-center mb-2">Enter OTP Code</label>
                 <input type="text" name="otp" id="otp" required
                     maxlength="6" inputmode="numeric" autocomplete="one-time-code" autofocus
-                    class="w-full px-4 py-4 rounded-xl border text-center text-3xl font-black tracking-[1rem] focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition {{ $errors->has('otp') ? 'border-red-400' : 'border-slate-200' }}"
+                    class="w-full px-4 py-4 rounded-xl border text-center text-3xl font-black tracking-[1rem] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition {{ $errors->has('otp') ? 'border-red-400' : 'border-slate-200' }}"
                     placeholder="000000">
             </div>
             <button type="submit"
-                class="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">
+                class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">
                 <i class="bi bi-check-circle-fill"></i> Verify & Continue
             </button>
         </form>
