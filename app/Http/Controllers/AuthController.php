@@ -240,7 +240,7 @@ class AuthController extends Controller
         }
         RateLimiter::hit($key, 120);
 
-        $this->sendResetOtp($request->phone_number);
+        $this->dispatchResetOtp($request->phone_number);
 
         return redirect()->route('password.verify.show', ['phone' => $request->phone_number])
             ->with('success', 'OTP sent! Enter it below to reset your password.');
@@ -330,7 +330,7 @@ class AuthController extends Controller
         $this->sms->sendOtp($phone, $otp);
     }
 
-    private function sendResetOtp(string $phone): void
+    private function dispatchResetOtp(string $phone): void
     {
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         PhoneOtp::where('phone_number', $phone)->delete();
