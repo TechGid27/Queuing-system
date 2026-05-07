@@ -7,6 +7,7 @@ use App\Models\QueueEntry;
 use App\Events\QueueUpdated;
 use App\Http\Requests\StoreQueueRequest;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class QueueController extends Controller
 {
@@ -57,7 +58,9 @@ class QueueController extends Controller
             ->take(8)
             ->get();
 
-        return view('tv', compact('currentNumber', 'currentServing', 'nextNumber', 'waitingCount', 'waitingList'));
+        $queuePaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+
+        return view('tv', compact('currentNumber', 'currentServing', 'nextNumber', 'waitingCount', 'waitingList', 'queuePaused'));
     }
 
     // ─── Index (Public + Student View) ────────────────────────────────────────
@@ -83,23 +86,32 @@ class QueueController extends Controller
         $waitingCount = QueueEntry::where('status', 'waiting')->count();
 
         $myTicket = null;
+        $myPosition = null;
         if (auth()->check()) {
             $myTicket = QueueEntry::where('user_id', auth()->id())
                 ->whereIn('status', ['waiting', 'serving'])
                 ->latest()
                 ->first();
+
+            if ($myTicket && $myTicket->status === 'waiting') {
+                $myPosition = QueueEntry::where('status', 'waiting')
+                    ->where('id', '<=', $myTicket->id)
+                    ->count();
+            }
         }
 
         $purposes = \App\Models\Purpose::where('is_active', true)->orderBy('name', 'asc')->get();
+        $queuePaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $avgServeTime = \App\Http\Controllers\StaffController::getAvgServeMinutes();
 
         if (auth()->check()) {
             // Staff should never see the student queue page
             if (auth()->user()->role === 'staff') {
                 return redirect()->route('admin.index');
             }
-            return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket'));
+            return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket', 'myPosition', 'queuePaused', 'avgServeTime'));
         } else {
-            return view('dashboard', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes'));
+            return view('dashboard', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'queuePaused', 'avgServeTime'));
         }
     }
 
@@ -113,11 +125,15 @@ class QueueController extends Controller
             ->orderBy('id', 'asc')
             ->first();
 
-        $next = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
+        $next        = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
+        $queuePaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $avgServeTime = \App\Http\Controllers\StaffController::getAvgServeMinutes();
 
         return response()->json([
-            'current' => $current,
-            'next'    => $next,
+            'current'        => $current,
+            'next'           => $next,
+            'queue_paused'   => $queuePaused,
+            'avg_serve_mins' => $avgServeTime,
         ]);
     }
 

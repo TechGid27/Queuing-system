@@ -30,11 +30,20 @@ class SmsService
     }
 
     /**
+     * Send OTP for password reset.
+     */
+    public function sendPasswordResetOtp(string $phone, string $otp): void
+    {
+        $message = "ACLC Queue System: Your password reset code is: {$otp}. Valid for 10 minutes. Do not share this code.";
+        $this->send($phone, $message);
+    }
+
+    /**
      * Notify student that they are now being served (their turn).
      */
     public function sendNowServingNotification(string $phone, string $ticketNumber): void
     {
-        $message = "ACLC Registrar: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
+        $message = "ACLC Cashier: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
         $this->send($phone, $message);
     }
 
@@ -43,7 +52,7 @@ class SmsService
      */
     public function sendAlmostYourTurnNotification(string $phone, string $ticketNumber): void
     {
-        $message = "ACLC Registrar: Ticket {$ticketNumber} - You're next in line! Please prepare your requirements and stay nearby.";
+        $message = "ACLC Cashier: Ticket {$ticketNumber} - You're next in line! Please prepare your requirements and stay nearby.";
         $this->send($phone, $message);
     }
 
@@ -52,7 +61,7 @@ class SmsService
      */
     public function sendCompletedNotification(string $phone, string $ticketNumber): void
     {
-        $message = "ACLC Registrar: Ticket {$ticketNumber} - Your transaction has been completed. Thank you!";
+        $message = "ACLC Cashier: Ticket {$ticketNumber} - Your transaction has been completed. Thank you!";
         $this->send($phone, $message);
     }
 
@@ -61,7 +70,7 @@ class SmsService
      */
     public function sendSkippedNotification(string $phone, string $ticketNumber): void
     {
-        $message = "ACLC Registrar: Ticket {$ticketNumber} - You were skipped due to no response. Please visit the registrar's office to re-queue.";
+        $message = "ACLC Cashier: Ticket {$ticketNumber} - You were skipped due to no response. Please visit the Cashier's office to re-queue.";
         $this->send($phone, $message);
     }
 

@@ -25,6 +25,14 @@ Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('stude
 Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('student.verify');
 Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('student.resend.otp');
 
+// ─── Forgot / Reset Password (via SMS OTP) ────────────────────────────────
+Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('password.request');
+Route::post('/forgot-password', [AuthController::class, 'sendResetOtp'])->name('password.send');
+Route::get('/reset-otp', [AuthController::class, 'showResetOtp'])->name('password.verify.show');
+Route::post('/reset-otp', [AuthController::class, 'verifyResetOtp'])->name('password.verify');
+Route::get('/reset-password', [AuthController::class, 'showResetPassword'])->name('password.reset.show');
+Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
+
 // ─── Student Portal (auth required) ──────────────────────────────────────────
 Route::middleware(['auth', 'is_student'])->group(function () {
     Route::get('/student/index', [QueueController::class, 'index'])->name('student.index');
@@ -41,6 +49,7 @@ Route::middleware(['auth', 'is_staff'])->group(function () {
     Route::get('/admin/reports/download', [StaffController::class, 'downloadReport'])->name('admin.reports.download');
 
     Route::get('/admin/waiting-list', [StaffController::class, 'waitingList'])->name('admin.waitingList');
+    Route::post('/admin/toggle-pause', [StaffController::class, 'togglePause'])->name('admin.togglePause');
 
     // Purpose Management
     Route::resource('/admin/purposes', PurposeController::class)

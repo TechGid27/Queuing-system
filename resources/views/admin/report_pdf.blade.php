@@ -19,7 +19,7 @@
 <body>
     <div class="header">
         <h1>ACLC College of Mandaue</h1>
-        <h3>Registrar's Office Queue Report</h3>
+        <h3>Cashier's Office Queue Report</h3>
         <p>Activity Date: {{ \Carbon\Carbon::parse($date)->format('F j, Y') }}</p>
     </div>
 

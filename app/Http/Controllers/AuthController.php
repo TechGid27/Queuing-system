@@ -211,20 +211,134 @@ class AuthController extends Controller
         return back()->with('success', 'A new OTP has been sent to your phone.');
     }
 
+    // ─── Forgot Password ─────────────────────────────────────────────────────
+
+    public function showForgotPassword()
+    {
+        return view('auth.forgot-password');
+    }
+
+    public function sendResetOtp(Request $request)
+    {
+        $request->validate([
+            'phone_number' => 'required|regex:/^09[0-9]{9}$/',
+        ]);
+
+        $user = User::where('phone_number', $request->phone_number)
+            ->whereNotNull('phone_verified_at')
+            ->first();
+
+        // Always show success to prevent phone enumeration
+        if (! $user) {
+            return back()->with('success', 'If that number is registered, an OTP has been sent.');
+        }
+
+        $key = 'reset-otp:' . $request->phone_number;
+        if (RateLimiter::tooManyAttempts($key, 3)) {
+            $seconds = RateLimiter::availableIn($key);
+            return back()->withErrors(['phone_number' => "Too many attempts. Try again in {$seconds} seconds."]);
+        }
+        RateLimiter::hit($key, 120);
+
+        $this->sendResetOtp($request->phone_number);
+
+        return redirect()->route('password.verify.show', ['phone' => $request->phone_number])
+            ->with('success', 'OTP sent! Enter it below to reset your password.');
+    }
+
+    public function showResetOtp(Request $request)
+    {
+        $phone = $request->query('phone');
+        if (! $phone) {
+            return redirect()->route('password.request');
+        }
+        return view('auth.reset-otp', compact('phone'));
+    }
+
+    public function verifyResetOtp(Request $request)
+    {
+        $request->validate([
+            'phone' => 'required',
+            'otp'   => 'required|digits:6',
+        ]);
+
+        $record = PhoneOtp::where('phone_number', $request->phone)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (! $record || $record->otp !== $request->otp) {
+            return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
+        }
+
+        if ($record->isExpired()) {
+            return back()->withErrors(['otp' => 'OTP has expired. Please request a new one.']);
+        }
+
+        // Store verified phone in session, delete OTP
+        session(['reset_verified_phone' => $request->phone]);
+        PhoneOtp::where('phone_number', $request->phone)->delete();
+
+        return redirect()->route('password.reset.show');
+    }
+
+    public function showResetPassword()
+    {
+        if (! session('reset_verified_phone')) {
+            return redirect()->route('password.request');
+        }
+        return view('auth.reset-password');
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        $phone = session('reset_verified_phone');
+        if (! $phone) {
+            return redirect()->route('password.request')
+                ->withErrors(['phone' => 'Session expired. Please start over.']);
+        }
+
+        $user = User::where('phone_number', $phone)->first();
+        if (! $user) {
+            return redirect()->route('password.request')
+                ->withErrors(['phone' => 'Account not found.']);
+        }
+
+        $user->update(['password' => Hash::make($request->password)]);
+        session()->forget('reset_verified_phone');
+
+        Auth::login($user);
+
+        $redirect = $user->role === 'staff' ? route('admin.index') : route('student.index');
+        return redirect($redirect)->with('success', 'Password reset successfully. Welcome back, ' . $user->name . '!');
+    }
+
     // ─── OTP Helper ──────────────────────────────────────────────────────────
 
     private function sendOtp(string $phone): void
     {
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-
         PhoneOtp::where('phone_number', $phone)->delete();
-
         PhoneOtp::create([
             'phone_number' => $phone,
             'otp'          => $otp,
             'expires_at'   => now()->addMinutes(10),
         ]);
-
         $this->sms->sendOtp($phone, $otp);
+    }
+
+    private function sendResetOtp(string $phone): void
+    {
+        $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        PhoneOtp::where('phone_number', $phone)->delete();
+        PhoneOtp::create([
+            'phone_number' => $phone,
+            'otp'          => $otp,
+            'expires_at'   => now()->addMinutes(10),
+        ]);
+        $this->sms->sendPasswordResetOtp($phone, $otp);
     }
 }

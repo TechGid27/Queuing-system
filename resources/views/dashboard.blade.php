@@ -9,7 +9,7 @@
         <div class="w-20 h-20 mx-auto mb-4">
             <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
         </div>
-        <h1 class="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">ACLC Mandaue Registrar</h1>
+        <h1 class="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">ACLC Mandaue Cashier</h1>
         <p class="text-slate-400 text-sm mt-1">Virtual Queue System</p>
     </div>
 

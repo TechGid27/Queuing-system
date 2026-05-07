@@ -31,7 +31,7 @@
         body { font-family: 'Inter', sans-serif; background: #0f172a; color: #fff; }
 
         .ticket-now {
-            font-size: 100px;
+            font-size: 75px;
             font-weight: 900;
             letter-spacing: -0.04em;
             line-height: 1;
@@ -74,10 +74,10 @@
     <header class="flex items-center justify-between px-10 py-4 border-b border-white/10 shrink-0"
             style="background: rgba(255, 255, 255, 0.04);">
         <div class="flex items-center gap-4">
-            <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-12 h-12 object-contain shrink-0 rounded-full bg-white">
+            <img src="/newAclcLogo-BQdiVkLw-removebg-preview.png" alt="ACLC Logo" class="w-12 h-12 object-contain shrink-0 rounded-full bg-white">
             <div>
                 <div class="text-white font-black text-xl tracking-tight leading-none">ACLC Mandaue</div>
-                <div class="text-slate-400 text-xs font-medium mt-0.5">Registrar's Office — Virtual Queue</div>
+                <div class="text-slate-400 text-xs font-medium mt-0.5">Cashier's Office — Virtual Queue</div>
             </div>
         </div>
         <div class="flex items-center gap-6">
@@ -99,8 +99,14 @@
         <div class="flex flex-col flex-1 min-w-0 border-r border-white/10">
 
             {{-- NOW SERVING --}}
-            <div class="flex-1 flex flex-col items-center justify-center px-10 py-5"
-                 style="background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%);">
+            <div id="tv-now-serving-bg" class="flex-1 flex flex-col items-center justify-center px-10 py-5 relative"
+                 style="background: {{ $queuePaused ? 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #b45309 100%)' : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%)' }};">
+
+                <div id="tv-break-banner" class="{{ $queuePaused ? '' : 'hidden' }} absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-yellow-400/20 border border-yellow-400/40 px-5 py-2 rounded-full">
+                    <i class="bi bi-pause-circle-fill text-yellow-300"></i>
+                    <span class="text-yellow-200 text-sm font-bold tracking-wide">QUEUE ON BREAK — Please wait</span>
+                </div>
+
                 <div class="label-tag text-blue-300 mb-6">Now Serving</div>
                 <div class="ticket-now text-white text-center" id="tv-current">{{ $currentNumber }}</div>
                 @if($currentServing)
@@ -175,7 +181,7 @@
                 <div class="text-2xl font-black text-blue-400" id="tv-est-wait">
                     {{ $waitingCount > 0 ? '~' . ($waitingCount * 5) . ' min' : 'Waiting' }}
                 </div>
-                <div class="text-slate-600 text-xs mt-0.5">avg. 5 min per student</div>
+                <div class="text-slate-600 text-xs mt-0.5">avg. 3 min per student</div>
             </div>
         </div>
 
@@ -186,7 +192,7 @@
          style="background: #1e3a8a;">
         <div class="ticker-inner text-blue-200 text-sm font-medium px-4">
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-            🎓 Welcome to ACLC Mandaue Registrar's Office
+            🎓 Welcome to ACLC Mandaue Cashier's Office
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
             Please have your requirements ready before your number is called
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -263,13 +269,15 @@ if (window.PUSHER_APP_KEY) {
     });
 
     pusher.subscribe('queue').bind('queue.updated', function(data) {
-        const currentEl = document.getElementById('tv-current');
-        const nextEl    = document.getElementById('tv-next');
-        const waitEl    = document.getElementById('tv-waiting');
-        const estEl     = document.getElementById('tv-est-wait');
-        const nameEl    = document.getElementById('tv-current-name');
-        const purposeEl = document.getElementById('tv-current-purpose');
+        const currentEl   = document.getElementById('tv-current');
+        const nextEl      = document.getElementById('tv-next');
+        const waitEl      = document.getElementById('tv-waiting');
+        const estEl       = document.getElementById('tv-est-wait');
+        const nameEl      = document.getElementById('tv-current-name');
+        const purposeEl   = document.getElementById('tv-current-purpose');
         const purposeWrap = document.getElementById('tv-current-purpose-wrap');
+        const nowServingBg = document.getElementById('tv-now-serving-bg');
+        const breakBanner  = document.getElementById('tv-break-banner');
 
         if (currentEl && data.current && currentEl.innerText !== data.current) {
             currentEl.innerText = data.current;
@@ -278,12 +286,12 @@ if (window.PUSHER_APP_KEY) {
 
         if (nextEl && data.next) nextEl.innerText = data.next ?? 'Waiting';
 
-        if (waitEl && data.waiting_count !== undefined) {
-            waitEl.innerText = data.waiting_count;
-        }
+        if (waitEl && data.waiting_count !== undefined) waitEl.innerText = data.waiting_count;
 
-        if (estEl && data.waiting_count !== undefined) {
-            estEl.innerText = data.waiting_count > 0 ? '~' + (data.waiting_count * 5) + ' min' : 'Waiting';
+        if (estEl && data.avg_serve_mins !== undefined && data.waiting_count !== undefined) {
+            estEl.innerText = data.waiting_count > 0
+                ? '~' + Math.round(data.waiting_count * data.avg_serve_mins) + ' min'
+                : 'Waiting';
         }
 
         if (data.current_serving) {
@@ -295,8 +303,17 @@ if (window.PUSHER_APP_KEY) {
             if (purposeWrap) purposeWrap.classList.add('hidden');
         }
 
-        if (data.waiting_list) {
-            updateQueueList(data.waiting_list);
+        if (data.waiting_list) updateQueueList(data.waiting_list);
+
+        // ── Pause/Resume real-time ──────────────────────────────────────
+        if (data.queue_paused !== undefined) {
+            const paused = data.queue_paused;
+            if (nowServingBg) {
+                nowServingBg.style.background = paused
+                    ? 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #b45309 100%)'
+                    : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%)';
+            }
+            if (breakBanner) breakBanner.classList.toggle('hidden', !paused);
         }
     });
 } else {

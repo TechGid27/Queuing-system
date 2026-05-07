@@ -10,7 +10,7 @@
                 <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
             </div>
             <h1 class="text-xl font-black text-slate-900">ACLC Queue System</h1>
-            <p class="text-sm text-slate-400 mt-1">Registrar's Office — Mandaue</p>
+            <p class="text-sm text-slate-400 mt-1">Cashier's Office — Mandaue</p>
         </div>
 
         {{-- Errors --}}
@@ -41,9 +41,14 @@
                     class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                     placeholder="••••••••">
             </div>
-            <div class="flex items-center gap-2">
-                <input type="checkbox" id="remember" name="remember" class="w-4 h-4 accent-primary rounded">
-                <label for="remember" class="text-sm text-slate-500 cursor-pointer">Keep me logged in</label>
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="remember" name="remember" class="w-4 h-4 accent-primary rounded">
+                    <label for="remember" class="text-sm text-slate-500 cursor-pointer">Keep me logged in</label>
+                </div>
+                <a href="{{ route('password.request') }}" class="text-xs text-primary font-semibold hover:underline">
+                    Forgot password?
+                </a>
             </div>
             <button type="submit"
                 class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">

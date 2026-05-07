@@ -56,7 +56,29 @@ class StaffController extends Controller
             ->orderBy('id', 'asc')
             ->paginate(10);
 
-        return view('admin.dashboard', compact('currentServing', 'waitingCount', 'completedCount', 'skippedCount', 'waitingStudents'));
+        $queuePaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+
+        return view('admin.dashboard', compact('currentServing', 'waitingCount', 'completedCount', 'skippedCount', 'waitingStudents', 'queuePaused'));
+    }
+
+    // ─── Queue Pause / Resume ─────────────────────────────────────────────────
+
+    public function togglePause()
+    {
+        $current = DB::table('settings')->where('key', 'queue_paused')->value('value');
+        $newVal  = $current === '1' ? '0' : '1';
+
+        DB::table('settings')
+            ->updateOrInsert(
+                ['key' => 'queue_paused'],
+                ['value' => $newVal, 'updated_at' => now()]
+            );
+
+        // Broadcast so student/TV views update instantly
+        $this->broadcastQueueState();
+
+        $msg = $newVal === '1' ? 'Queue paused. Students will see a break notice.' : 'Queue resumed.';
+        return back()->with('success', $msg);
     }
 
     // ─── Queue Actions ────────────────────────────────────────────────────────
@@ -184,19 +206,48 @@ class StaffController extends Controller
             ->get(['id', 'ticket_number', 'name', 'purpose']);
 
         $currentServing = QueueEntry::where('status', 'serving')
-            ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number']);
+            ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number', 'served_at', 'updated_at']);
 
         $waitingCount   = $waitingStudents->count();
         $completedCount = QueueEntry::where('status', 'completed')->whereDate('created_at', now()->today())->count();
         $skippedCount   = QueueEntry::where('status', 'no_response')->whereDate('created_at', now()->today())->count();
+        $queuePaused    = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $avgServeTime   = $this->getAvgServeMinutes();
 
         return response()->json([
-            'waiting'        => $waitingStudents,
-            'current'        => $currentServing,
-            'waiting_count'  => $waitingCount,
-            'completed_count'=> $completedCount,
-            'skipped_count'  => $skippedCount,
+            'waiting'         => $waitingStudents,
+            'current'         => $currentServing ? array_merge($currentServing->toArray(), [
+                'served_at_ts' => ($currentServing->served_at ?? $currentServing->updated_at)->timestamp,
+            ]) : null,
+            'waiting_count'   => $waitingCount,
+            'completed_count' => $completedCount,
+            'skipped_count'   => $skippedCount,
+            'queue_paused'    => $queuePaused,
+            'avg_serve_mins'  => $avgServeTime,
         ]);
+    }
+
+    /**
+     * Compute average serve time (minutes) from today's completed entries.
+     * Falls back to 5 minutes if not enough data.
+     */
+    public static function getAvgServeMinutes(): float
+    {
+        $completed = QueueEntry::where('status', 'completed')
+            ->whereDate('created_at', now()->today())
+            ->whereNotNull('served_at')
+            ->whereNotNull('completed_at')
+            ->get(['served_at', 'completed_at']);
+
+        if ($completed->count() < 2) {
+            return 5.0; // default fallback
+        }
+
+        $totalSeconds = $completed->sum(fn($e) => $e->completed_at->diffInSeconds($e->served_at));
+        $avgSeconds   = $totalSeconds / $completed->count();
+
+        // Clamp between 1 and 30 minutes to avoid wild outliers
+        return round(max(1, min(30, $avgSeconds / 60)), 1);
     }
 
     // ─── Reports ─────────────────────────────────────────────────────────────

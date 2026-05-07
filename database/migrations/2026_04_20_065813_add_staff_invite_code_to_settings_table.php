@@ -17,10 +17,18 @@ return new class extends Migration
 
         // Seed the default staff invite code
         DB::table('settings')->insert([
-            'key'        => 'staff_invite_code',
-            'value'      => 'ACLC-STAFF-2026',
-            'created_at' => now(),
-            'updated_at' => now(),
+            [
+                'key'        => 'staff_invite_code',
+                'value'      => 'ACLC-STAFF-2026',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'key'        => 'queue_paused',
+                'value'      => '0',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

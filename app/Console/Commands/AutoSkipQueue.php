@@ -7,6 +7,7 @@ use App\Models\QueueEntry;
 use App\Events\QueueUpdated;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class AutoSkipQueue extends Command
 {
@@ -15,8 +16,22 @@ class AutoSkipQueue extends Command
 
     public function handle(SmsService $sms)
     {
+        // Don't auto-skip while queue is paused (e.g. lunch break)
+        $paused = DB::table('settings')->where('key', 'queue_paused')->value('value');
+        if ($paused === '1') {
+            $this->info('Queue is paused. Skipping auto-skip check.');
+            return Command::SUCCESS;
+        }
+
         $servingStudents = QueueEntry::where('status', 'serving')
-            ->where('updated_at', '<', now()->subMinutes(3))
+            ->where(function ($q) {
+                // Use served_at if available, fall back to updated_at
+                $q->where('served_at', '<', now()->subMinutes(3))
+                  ->orWhere(function ($q2) {
+                      $q2->whereNull('served_at')
+                         ->where('updated_at', '<', now()->subMinutes(3));
+                  });
+            })
             ->get();
 
         foreach ($servingStudents as $student) {

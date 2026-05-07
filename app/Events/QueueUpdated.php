@@ -53,6 +53,11 @@ class QueueUpdated implements ShouldBroadcastNow
         $currentServing = \App\Models\QueueEntry::where('status', 'serving')
             ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number']);
 
+        $queuePaused  = \Illuminate\Support\Facades\DB::table('settings')
+            ->where('key', 'queue_paused')->value('value') === '1';
+
+        $avgServeMins = \App\Http\Controllers\StaffController::getAvgServeMinutes();
+
         return [
             'current'          => $this->currentNumber,
             'next'             => $this->nextNumber,
@@ -61,6 +66,8 @@ class QueueUpdated implements ShouldBroadcastNow
             'current_serving'  => $currentServing,
             'completed_ticket' => $this->completedTicket,
             'skipped_ticket'   => $this->skippedTicket,
+            'queue_paused'     => $queuePaused,
+            'avg_serve_mins'   => $avgServeMins,
         ];
     }
 }

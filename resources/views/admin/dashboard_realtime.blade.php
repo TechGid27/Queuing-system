@@ -22,14 +22,21 @@
                 if (nowServingEl) {
                     if (data.current) {
                         const s = data.current;
+                        // served_at_ts comes from the API (Unix seconds)
+                        const servedAtTs = s.served_at_ts ?? Math.floor(Date.now() / 1000);
                         nowServingEl.innerHTML = `
                             <div class="text-center py-4">
                                 <div class="ticket-xl text-primary mb-3">${s.ticket_number}</div>
                                 <div class="text-lg font-bold text-slate-800">${s.name}</div>
                                 <div class="text-sm text-slate-400 mt-1">${s.purpose}</div>
-                                <div class="mt-2">
+                                <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
                                     <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
                                         <i class="bi bi-phone"></i> ${s.phone_number ?? ''}
+                                    </span>
+                                    <span id="auto-skip-timer"
+                                        class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500"
+                                        data-served-at="${servedAtTs}">
+                                        <i class="bi bi-clock"></i> <span id="auto-skip-label">--:--</span>
                                     </span>
                                 </div>
                             </div>
@@ -54,6 +61,8 @@
                                     </button>
                                 </form>
                             </div>`;
+                        // Restart the countdown for the newly rendered timer
+                        if (typeof updateAutoSkipTimer === 'function') updateAutoSkipTimer();
                     } else {
                         nowServingEl.innerHTML = `
                             <div class="text-center py-10">
@@ -99,7 +108,7 @@
             });
     }
 
-    if (window.PUSHER_APP_KEY) {
+    if (window.Echo) {
         // Reuse the existing Echo instance from layout — no duplicate connection
         window.Echo.channel('queue').listen('.queue.updated', function(data) {
             refreshDashboard();
