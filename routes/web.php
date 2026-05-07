@@ -13,25 +13,28 @@ Route::get('/api/queue-status', [QueueController::class, 'getStatus'])->name('ap
 Route::get('/api/purposes', [PurposeController::class, 'getActivePurposes'])->name('api.purposes');
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
-Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-Route::post('/login', [AuthController::class, 'login'])->name('login.post');
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/login', [AuthController::class, 'login'])->name('login.post');
+
+    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::post('/register', [AuthController::class, 'registerStudent'])->name('register.post');
+
+    // OTP Verification
+    Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('student.verify.show');
+    Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('student.verify');
+    Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('student.resend.otp');
+
+    // ─── Forgot / Reset Password (via SMS OTP) ────────────────────────────────
+    Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('password.request');
+    Route::post('/forgot-password', [AuthController::class, 'sendResetOtp'])->name('password.send');
+    Route::get('/reset-otp', [AuthController::class, 'showResetOtp'])->name('password.verify.show');
+    Route::post('/reset-otp', [AuthController::class, 'verifyResetOtp'])->name('password.verify');
+    Route::get('/reset-password', [AuthController::class, 'showResetPassword'])->name('password.reset.show');
+    Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
+});
+
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-
-Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-Route::post('/register', [AuthController::class, 'registerStudent'])->name('register.post');
-
-// OTP Verification
-Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('student.verify.show');
-Route::post('/verify-otp', [AuthController::class, 'verifyOtp'])->name('student.verify');
-Route::post('/resend-otp', [AuthController::class, 'resendOtp'])->name('student.resend.otp');
-
-// ─── Forgot / Reset Password (via SMS OTP) ────────────────────────────────
-Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])->name('password.request');
-Route::post('/forgot-password', [AuthController::class, 'sendResetOtp'])->name('password.send');
-Route::get('/reset-otp', [AuthController::class, 'showResetOtp'])->name('password.verify.show');
-Route::post('/reset-otp', [AuthController::class, 'verifyResetOtp'])->name('password.verify');
-Route::get('/reset-password', [AuthController::class, 'showResetPassword'])->name('password.reset.show');
-Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
 // ─── Student Portal (auth required) ──────────────────────────────────────────
 Route::middleware(['auth', 'is_student'])->group(function () {
