@@ -5,15 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ config('app.name', 'ACLC Queue System') }}</title>
-    {{-- Pusher config must be set before app.js initialises Echo --}}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { DEFAULT: '#2563eb', dark: '#1d4ed8', light: '#dbeafe' },
+                        sidebar: '#0f172a',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
         window.PUSHER_HOST        = "{{ config('broadcasting.connections.pusher.options.host', '') }}";
         window.PUSHER_PORT        = "{{ config('broadcasting.connections.pusher.options.port', 443) }}";
         window.PUSHER_SCHEME      = "{{ config('broadcasting.connections.pusher.options.scheme', 'https') }}";
+        
+        // Initialize Laravel Echo with Pusher
+        window.Pusher = Pusher;
+        window.Echo = new Echo({
+            broadcaster: 'pusher',
+            key: window.PUSHER_APP_KEY,
+            cluster: window.PUSHER_APP_CLUSTER,
+            forceTLS: window.PUSHER_SCHEME === 'https',
+        });
     </script>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .ticket-xl  { font-size: clamp(3rem, 10vw, 6rem); font-weight: 900; letter-spacing: -0.05em; line-height: 1; }
+        .ticket-lg  { font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+        .badge-live { animation: pulse-live 2s infinite; }
+        @keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:.5} }
+        .sidebar-link { transition: background .15s, color .15s; }
+        [x-cloak] { display: none !important; }
+    </style>
     @yield('styles')
 </head>
 <body class="bg-slate-100 text-slate-900 antialiased">
@@ -175,6 +209,9 @@
         setTimeout(() => el.remove(), 4500);
     }
 </script>
+<style>
+    @keyframes slideIn { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
+</style>
 @yield('scripts')
 @stack('scripts')
 </body>

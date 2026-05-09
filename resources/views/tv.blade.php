@@ -5,17 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>ACLC Queue Display</title>
-    {{-- Pusher config must be set before app.js initialises Echo --}}
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { DEFAULT: '#2563eb', dark: '#1d4ed8', light: '#dbeafe' },
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
-        window.PUSHER_SCHEME      = "https";
     </script>
-    @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-        body { background: #0f172a; color: #fff; }
+        body { font-family: 'Inter', sans-serif; background: #0f172a; color: #fff; }
 
         .ticket-now {
             font-size: 75px;
