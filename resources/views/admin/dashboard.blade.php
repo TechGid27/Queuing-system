@@ -51,21 +51,48 @@
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
             <div class="flex items-center gap-2">
-                {{-- Ticket Mode dropdown (Automatic = running, Manual = paused) --}}
-                <form action="{{ route('admin.togglePause') }}" method="POST" id="ticket-mode-form">
-                    @csrf
-                    <div class="flex items-center gap-1.5">
-                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
-                        <select onchange="document.getElementById('ticket-mode-form').submit()"
-                            class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
-                                   {{ $queuePaused
-                                       ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
-                                       : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}">
-                            <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
-                            <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
-                        </select>
+                {{-- Ticket Mode dropdown + Pause/Resume buttons --}}
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <form action="{{ route('admin.togglePause') }}" method="POST" id="ticket-mode-form">
+                        @csrf
+                        <div class="flex items-center gap-1.5">
+                            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
+                            <select id="ticket-mode-select"
+                                onchange="handleTicketModeChange(this)"
+                                data-paused="{{ $queuePaused ? '1' : '0' }}"
+                                class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
+                                       {{ $queuePaused
+                                           ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
+                                           : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}"
+                                id="ticket-mode-select">
+                                <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
+                                <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
+                            </select>
+                        </div>
+                    </form>
+
+                    {{-- Pause / Resume buttons — only visible in Manual mode --}}
+                    <div id="pause-resume-btns" class="{{ $queuePaused ? 'flex' : 'hidden' }} items-center gap-1.5">
+                        {{-- Pause button — shown when queue is running (not paused) --}}
+                        <form action="{{ route('admin.togglePause') }}" method="POST" id="pause-btn-form"
+                              class="{{ $queuePaused ? 'hidden' : '' }}">
+                            @csrf
+                            <button type="submit"
+                                class="inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
+                                <i class="bi bi-pause-fill"></i> Pause
+                            </button>
+                        </form>
+                        {{-- Resume button — shown when queue is paused --}}
+                        <form action="{{ route('admin.togglePause') }}" method="POST" id="resume-btn-form"
+                              class="{{ $queuePaused ? '' : 'hidden' }}">
+                            @csrf
+                            <button type="submit"
+                                class="inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
+                                <i class="bi bi-play-fill"></i> Resume
+                            </button>
+                        </form>
                     </div>
-                </form>
+                </div>
                 <span class="badge-live inline-flex items-center gap-1.5 bg-green-50 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full">
                     <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> LIVE
                 </span>
@@ -73,12 +100,10 @@
         </div>
 
         {{-- Paused banner --}}
-        @if($queuePaused)
-        <div class="flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
+        <div id="paused-banner" class="{{ $queuePaused ? '' : 'hidden' }} flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
             <i class="bi bi-pause-circle-fill text-yellow-500 text-base"></i>
             <span class="font-semibold">Queue is in Manual mode (paused).</span> Auto-skip is disabled. Students see a break notice.
         </div>
-        @endif
 
         <div id="now-serving-panel">
         @if($currentServing)
@@ -214,6 +239,86 @@
 
 @section('scripts')
 <script>
+    // ── Ticket Mode dropdown handler ───────────────────────────────────────────
+    function handleTicketModeChange(select) {
+        const btnsWrap   = document.getElementById('pause-resume-btns');
+        const pauseForm  = document.getElementById('pause-btn-form');
+        const resumeForm = document.getElementById('resume-btn-form');
+        const modeSelect = document.getElementById('ticket-mode-select');
+
+        if (select.value === 'manual') {
+            // Show pause/resume area
+            btnsWrap.classList.remove('hidden');
+            btnsWrap.classList.add('flex');
+
+            // Determine which button to show based on current paused state
+            const isPaused = modeSelect.dataset.paused === '1';
+            if (isPaused) {
+                pauseForm.classList.add('hidden');
+                resumeForm.classList.remove('hidden');
+            } else {
+                pauseForm.classList.remove('hidden');
+                resumeForm.classList.add('hidden');
+                // Auto-submit to pause immediately when switching to Manual
+                document.getElementById('ticket-mode-form').submit();
+            }
+        } else {
+            // Automatic selected — hide buttons and submit to resume
+            btnsWrap.classList.add('hidden');
+            btnsWrap.classList.remove('flex');
+            document.getElementById('ticket-mode-form').submit();
+        }
+    }
+
+    // ── Sync pause/resume buttons from real-time data ──────────────────────────
+    function updatePauseResumeUI(isPaused) {
+        const modeSelect   = document.getElementById('ticket-mode-select');
+        const btnsWrap     = document.getElementById('pause-resume-btns');
+        const pauseForm    = document.getElementById('pause-btn-form');
+        const resumeForm   = document.getElementById('resume-btn-form');
+        const pausedBanner = document.getElementById('paused-banner');
+
+        if (!modeSelect) return;
+
+        // Store current paused state on the element
+        modeSelect.dataset.paused = isPaused ? '1' : '0';
+
+        const isManualMode = modeSelect.value === 'manual';
+
+        // Only update dropdown color — do NOT change the selected value.
+        // The staff chose Manual mode; resuming doesn't switch them back to Automatic.
+        if (isPaused) {
+            modeSelect.className = modeSelect.className
+                .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
+                .trim() + ' bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
+        } else {
+            modeSelect.className = modeSelect.className
+                .replace(/bg-yellow-\S+|border-yellow-\S+|text-yellow-\S+|hover:bg-yellow-\S+/g, '')
+                .trim() + ' bg-green-100 border-green-300 text-green-700 hover:bg-green-200';
+        }
+
+        // If in Manual mode, always keep the buttons visible —
+        // just swap which button (Pause vs Resume) is shown.
+        if (isManualMode) {
+            btnsWrap.classList.remove('hidden');
+            btnsWrap.classList.add('flex');
+            if (isPaused) {
+                pauseForm.classList.add('hidden');
+                resumeForm.classList.remove('hidden');
+            } else {
+                pauseForm.classList.remove('hidden');
+                resumeForm.classList.add('hidden');
+            }
+        } else {
+            // Automatic mode — hide buttons entirely
+            btnsWrap.classList.add('hidden');
+            btnsWrap.classList.remove('flex');
+        }
+
+        // Update paused banner
+        if (pausedBanner) pausedBanner.classList.toggle('hidden', !isPaused);
+    }
+
     // ── Auto-skip countdown timer ──────────────────────────────────────────────
     const AUTO_SKIP_SECONDS = 3 * 60; // must match AutoSkipQueue command (3 minutes)
 

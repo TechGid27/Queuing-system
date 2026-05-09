@@ -53,6 +53,7 @@ class QueueUpdated implements ShouldBroadcastNow
         $currentServing = \App\Models\QueueEntry::where('status', 'serving')
             ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number']);
 
+
         $queuePaused  = \Illuminate\Support\Facades\DB::table('settings')
             ->where('key', 'queue_paused')->value('value') === '1';
 

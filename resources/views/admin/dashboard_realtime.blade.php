@@ -79,6 +79,11 @@
                     }
                 }
 
+                // ── Pause/Resume UI sync ──────────────────────────────────
+                if (data.queue_paused !== undefined) {
+                    updatePauseResumeUI(data.queue_paused);
+                }
+
                 // ── Waiting list ───────────────────────────────────────────
                 const listEl = document.getElementById('waiting-list-body');
                 if (!listEl) return;
