@@ -51,20 +51,20 @@
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
             <div class="flex items-center gap-2">
-                {{-- Pause / Resume toggle --}}
-                <form action="{{ route('admin.togglePause') }}" method="POST">
+                {{-- Ticket Mode dropdown (Automatic = running, Manual = paused) --}}
+                <form action="{{ route('admin.togglePause') }}" method="POST" id="ticket-mode-form">
                     @csrf
-                    @if($queuePaused)
-                        <button type="submit"
-                            class="inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                            <i class="bi bi-play-fill"></i> Resume Queue
-                        </button>
-                    @else
-                        <button type="submit"
-                            class="inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                            <i class="bi bi-pause-fill"></i> Pause Queue
-                        </button>
-                    @endif
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
+                        <select onchange="document.getElementById('ticket-mode-form').submit()"
+                            class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
+                                   {{ $queuePaused
+                                       ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
+                                       : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}">
+                            <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
+                            <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
+                        </select>
+                    </div>
                 </form>
                 <span class="badge-live inline-flex items-center gap-1.5 bg-green-50 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full">
                     <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> LIVE
@@ -76,14 +76,14 @@
         @if($queuePaused)
         <div class="flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
             <i class="bi bi-pause-circle-fill text-yellow-500 text-base"></i>
-            <span class="font-semibold">Queue is paused.</span> Auto-skip is disabled. Students see a break notice.
+            <span class="font-semibold">Queue is in Manual mode (paused).</span> Auto-skip is disabled. Students see a break notice.
         </div>
         @endif
 
         <div id="now-serving-panel">
         @if($currentServing)
             <div class="text-center py-4">
-                <div class="ticket-xl text-primary mb-3">{{ $currentServing->ticket_number }}</div>
+                <div class="ticket-xl text-red-600 mb-3">{{ $currentServing->ticket_number }}</div>
                 <div class="text-lg font-bold text-slate-800">{{ $currentServing->name }}</div>
                 <div class="text-sm text-slate-400 mt-1">{{ $currentServing->purpose }}</div>
                 <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">

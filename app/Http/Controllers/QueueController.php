@@ -157,13 +157,21 @@ class QueueController extends Controller
 
         $ticketNumber = "ACLC-{$today}-" . str_pad($sequence, 3, '0', STR_PAD_LEFT);
 
-        $purpose = \App\Models\Purpose::find($request->purpose_id);
+        // Resolve purpose name — handle "Other" free-text option
+        if ($request->purpose_id === 'other') {
+            $purposeName = trim($request->other_purpose) ?: 'Other';
+            $purposeId   = null;
+        } else {
+            $purpose     = \App\Models\Purpose::find($request->purpose_id);
+            $purposeName = $purpose ? $purpose->name : 'Unknown';
+            $purposeId   = $request->purpose_id;
+        }
 
         $entry = QueueEntry::create([
             'ticket_number' => $ticketNumber,
             'name'          => $user->name,
-            'purpose'       => $purpose ? $purpose->name : 'Unknown',
-            'purpose_id'    => $request->purpose_id,
+            'purpose'       => $purposeName,
+            'purpose_id'    => $purposeId,
             'phone_number'  => $user->phone_number,
             'status'        => 'waiting',
             'user_id'       => $user->id,

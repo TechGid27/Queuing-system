@@ -22,7 +22,7 @@
         {{-- Now Serving --}}
         <div class="bg-white rounded-2xl border border-slate-200 p-6 lg:p-8 text-center">
             <div class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Now Serving</div>
-            <div class="ticket-xl {{ $queuePaused ? 'text-slate-300' : 'text-primary' }}" id="current-number">{{ $currentNumber }}</div>
+            <div class="ticket-xl {{ $queuePaused ? 'text-slate-300' : 'text-red-600' }}" id="current-number">{{ $currentNumber }}</div>
             <div class="mt-4">
                 @if($queuePaused)
                     <span id="break-badge" class="inline-flex items-center gap-1.5 bg-yellow-50 text-yellow-700 text-xs font-bold px-3 py-1.5 rounded-full">
@@ -95,7 +95,7 @@
 
                 <div class="bg-slate-50 rounded-xl border-2 border-dashed border-slate-200 py-7 px-4 mb-5">
                     <div class="text-xs text-slate-400 mb-2">Ticket Number</div>
-                    <div class="ticket-lg text-primary" id="my-ticket-number">{{ $myTicket->ticket_number }}</div>
+                    <div class="ticket-lg text-red-600" id="my-ticket-number">{{ $myTicket->ticket_number }}</div>
                     <div class="mt-4">
                         <span id="my-ticket-status"
                             class="inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full
@@ -139,17 +139,27 @@
                 @csrf
                 <div class="mb-4">
                     <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Purpose of Visit</label>
-                    <select name="purpose_id" required
+                    <select name="purpose_id" id="purpose-select" required
+                        onchange="handlePurposeChange(this)"
                         class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition
                                {{ $errors->has('purpose_id') ? 'border-red-400' : '' }}">
                         <option value="">Choose one...</option>
                         @foreach($purposes as $purpose)
                             <option value="{{ $purpose->id }}">{{ $purpose->name }}</option>
                         @endforeach
+                        <option value="other">Other</option>
                     </select>
                     @error('purpose_id')
                         <p class="text-red-500 text-xs mt-1.5">{{ $message }}</p>
                     @enderror
+
+                    {{-- Other purpose text field (hidden by default) --}}
+                    <div id="other-purpose-wrap" class="hidden mt-2">
+                        <input type="text" name="other_purpose" id="other-purpose-input"
+                            placeholder="Please describe your purpose..."
+                            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition">
+                        <p class="text-xs text-slate-400 mt-1">Describe your purpose of visit.</p>
+                    </div>
                 </div>
 
                 <button type="submit"
@@ -167,6 +177,20 @@
 
 @section('scripts')
 <script>
+    // ── Other purpose toggle ───────────────────────────────────────────────────
+    function handlePurposeChange(select) {
+        const wrap  = document.getElementById('other-purpose-wrap');
+        const input = document.getElementById('other-purpose-input');
+        if (select.value === 'other') {
+            wrap.classList.remove('hidden');
+            input.required = true;
+        } else {
+            wrap.classList.add('hidden');
+            input.required = false;
+            input.value = '';
+        }
+    }
+
     // Avg serve time from server (minutes per student)
     let avgServeMins = {{ $avgServeTime }};
     let queuePaused  = {{ $queuePaused ? 'true' : 'false' }};
@@ -206,7 +230,7 @@
         if (liveEl)  liveEl.classList.toggle('hidden', paused);
         if (breakEl) breakEl.classList.toggle('hidden', !paused);
         if (numEl) {
-            numEl.classList.toggle('text-primary', !paused);
+            numEl.classList.toggle('text-red-600', !paused);
             numEl.classList.toggle('text-slate-300', paused);
         }
     }

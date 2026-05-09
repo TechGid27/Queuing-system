@@ -1,0 +1,31 @@
+/* Inter font - self-hosted */
+@import '@fontsource/inter/300.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/inter/800.css';
+@import '@fontsource/inter/900.css';
+
+/* Bootstrap Icons - self-hosted */
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+
+/* Tailwind */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Custom app styles ── */
+body { font-family: 'Inter', sans-serif; }
+
+.ticket-xl  { font-size: clamp(3rem, 10vw, 6rem); font-weight: 900; letter-spacing: -0.05em; line-height: 1; }
+.ticket-lg  { font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+
+.badge-live { animation: pulse-live 2s infinite; }
+@keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+.sidebar-link { transition: background .15s, color .15s; }
+[x-cloak] { display: none !important; }
+
+@keyframes slideIn { from{transform:translateX(40px);opacity:0} to{transform:translateX(0);opacity:1} }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.3} }

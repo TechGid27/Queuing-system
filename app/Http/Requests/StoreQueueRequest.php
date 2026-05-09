@@ -15,7 +15,8 @@ class StoreQueueRequest extends FormRequest
     public function rules()
     {
         return [
-            'purpose_id' => 'required|exists:purposes,id',
+            'purpose_id'    => 'required',
+            'other_purpose' => 'nullable|string|max:255',
         ];
     }
 
@@ -30,6 +31,20 @@ class StoreQueueRequest extends FormRequest
 
             if (! $user) {
                 return;
+            }
+
+            // Validate purpose_id: must be "other" or an existing active purpose
+            $purposeId = $this->input('purpose_id');
+            if ($purposeId !== 'other') {
+                $exists = \App\Models\Purpose::where('id', $purposeId)->exists();
+                if (! $exists) {
+                    $validator->errors()->add('purpose_id', 'Please select a valid purpose.');
+                }
+            } else {
+                // "Other" requires the text field
+                if (! trim($this->input('other_purpose', ''))) {
+                    $validator->errors()->add('purpose_id', 'Please describe your purpose of visit.');
+                }
             }
 
             $activeTicket = QueueEntry::where('user_id', $user->id)
