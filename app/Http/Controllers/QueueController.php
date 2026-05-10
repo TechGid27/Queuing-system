@@ -141,21 +141,22 @@ class QueueController extends Controller
 
     public function store(StoreQueueRequest $request)
     {
-        $user = auth()->user();
+        $user  = auth()->user();
+        $today = now()->format('Y-m-d');
 
-        // Generate daily ticket sequence: ACLC-20260420-001
-        $today     = now()->format('Ymd');
-        $lastEntry = QueueEntry::where('ticket_number', 'LIKE', "ACLC-{$today}-%")
-            ->orderBy('id', 'desc')
-            ->first();
+        // Daily sequence counter stored in cache — key includes today's date so it
+        // naturally resets to 1 the next day when the key no longer exists.
+        $cacheKey = "ticket_sequence_{$today}";
+        $sequence = Cache::increment($cacheKey);
 
-        $sequence = 1;
-        if ($lastEntry) {
-            $parts    = explode('-', $lastEntry->ticket_number);
-            $sequence = intval(end($parts)) + 1;
+        // If this is the very first ticket of the day, set the cache to expire
+        // at midnight so it resets cleanly even if no one joins the next day.
+        if ($sequence === 1) {
+            $secondsUntilMidnight = now()->secondsUntilEndOfDay() + 1;
+            Cache::put($cacheKey, 1, $secondsUntilMidnight);
         }
 
-        $ticketNumber = "ACLC-{$today}-" . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+        $ticketNumber = str_pad($sequence, 3, '0', STR_PAD_LEFT); // 001, 002, ...
 
         // Resolve purpose name — handle "Other" free-text option
         if ($request->purpose_id === 'other') {
