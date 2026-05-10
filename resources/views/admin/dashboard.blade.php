@@ -255,7 +255,8 @@
 
             const data = await res.json();
             if (data.success) {
-                applyPauseState(data.queue_paused, 'manual');
+                // Pause/Resume buttons clicked by staff — keep dropdown as-is (still Manual)
+                applyPauseState(data.queue_paused, 'manual', false);
                 showToast(data.message, data.queue_paused ? 'warning' : 'success');
             }
         } catch (e) {
@@ -266,15 +267,39 @@
     // ── Ticket Mode dropdown handler ──────────────────────────────────────────
     function handleTicketModeChange(select) {
         if (select.value === 'manual') {
+            // Staff switched to Manual → pause + update dropdown color
+            applyDropdownColor(true);
             sendPauseAction('pause');
         } else {
+            // Staff switched to Automatic → resume + hide buttons
+            applyDropdownColor(false);
+            const btnsWrap = document.getElementById('pause-resume-btns');
+            btnsWrap.classList.add('hidden');
+            btnsWrap.classList.remove('flex');
             sendPauseAction('resume');
         }
     }
 
+    // ── Update dropdown color only ────────────────────────────────────────────
+    function applyDropdownColor(isPaused) {
+        const modeSelect = document.getElementById('ticket-mode-select');
+        if (!modeSelect) return;
+        if (isPaused) {
+            modeSelect.className = modeSelect.className
+                .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
+                .trim() + ' bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
+        } else {
+            modeSelect.className = modeSelect.className
+                .replace(/bg-yellow-\S+|border-yellow-\S+|text-yellow-\S+|hover:bg-yellow-\S+/g, '')
+                .trim() + ' bg-green-100 border-green-300 text-green-700 hover:bg-green-200';
+        }
+    }
+
     // ── Apply pause state to all UI elements (no reload) ─────────────────────
-    // source: 'manual' = staff clicked, 'auto' = lunch break scheduler
-    function applyPauseState(isPaused, source = 'auto') {
+    // source:         'manual' = staff action, 'auto' = lunch break scheduler
+    // syncDropdown:   true  = also update dropdown value (used by broadcast/realtime)
+    //                 false = leave dropdown value alone (used by Pause/Resume button clicks)
+    function applyPauseState(isPaused, source = 'auto', syncDropdown = true) {
         const modeSelect   = document.getElementById('ticket-mode-select');
         const btnsWrap     = document.getElementById('pause-resume-btns');
         const pauseBtn     = document.getElementById('pause-btn');
@@ -285,37 +310,37 @@
         if (!modeSelect) return;
 
         modeSelect.dataset.paused = isPaused ? '1' : '0';
-        modeSelect.value          = isPaused ? 'manual' : 'automatic';
 
-        // Dropdown color
-        if (isPaused) {
-            modeSelect.className = modeSelect.className
-                .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
-                .trim() + ' bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
-        } else {
-            modeSelect.className = modeSelect.className
-                .replace(/bg-yellow-\S+|border-yellow-\S+|text-yellow-\S+|hover:bg-yellow-\S+/g, '')
-                .trim() + ' bg-green-100 border-green-300 text-green-700 hover:bg-green-200';
+        // Only sync dropdown value when explicitly requested (e.g. page load / broadcast)
+        // NOT when staff clicks Pause/Resume — they stay in Manual mode
+        if (syncDropdown) {
+            modeSelect.value = isPaused ? 'manual' : 'automatic';
         }
 
-        // Pause/Resume buttons
+        // Dropdown color follows actual pause state
+        applyDropdownColor(isPaused);
+
+        // Pause/Resume buttons: only visible when dropdown is Manual
         const isManual = modeSelect.value === 'manual';
         if (isManual) {
             btnsWrap.classList.remove('hidden');
             btnsWrap.classList.add('flex');
+            // Swap which button shows based on current pause state
             if (isPaused) {
                 pauseBtn?.classList.add('hidden');
                 resumeBtn?.classList.remove('hidden');
             } else {
+                // Resumed but still in Manual — show Pause button so staff can re-pause
                 pauseBtn?.classList.remove('hidden');
                 resumeBtn?.classList.add('hidden');
             }
         } else {
+            // Automatic mode — hide both buttons
             btnsWrap.classList.add('hidden');
             btnsWrap.classList.remove('flex');
         }
 
-        // Banner text — distinguish auto lunch break vs manual pause
+        // Banner text
         if (bannerReason) {
             if (isPaused && source === 'auto') {
                 bannerReason.innerText = ' Lunch break in progress. Auto-skip is disabled. Students see a break notice.';
