@@ -281,10 +281,16 @@
     }
 
     // ── Update dropdown color only ────────────────────────────────────────────
+    // colorPaused: true = yellow (paused), false = green (running)
+    // But if we're in Manual mode and just resumed, still show yellow (still manual)
     function applyDropdownColor(isPaused) {
         const modeSelect = document.getElementById('ticket-mode-select');
         if (!modeSelect) return;
-        if (isPaused) {
+
+        // In Manual mode, always yellow regardless of pause state
+        const forceYellow = modeSelect.value === 'manual';
+
+        if (isPaused || forceYellow) {
             modeSelect.className = modeSelect.className
                 .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
                 .trim() + ' bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
@@ -354,18 +360,27 @@
 
     // ── Called from dashboard_realtime when broadcast arrives ─────────────────
     function updatePauseResumeUI(isPaused, lbStart, lbEnd) {
-        // Update lunch break times if provided by the API
         if (lbStart) lunchBreakStart = lbStart;
         if (lbEnd)   lunchBreakEnd   = lbEnd;
 
-        // Determine if this is an auto lunch-break pause by checking current time
-        const now  = new Date();
-        const hhmm = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-        const lbStartRaw = "{{ $lunchBreakStart }}"; // e.g. "12:00"
-        const lbEndRaw   = "{{ $lunchBreakEnd }}";   // e.g. "13:30"
-        const isLunchTime = hhmm >= lbStartRaw && hhmm < lbEndRaw;
+        const modeSelect = document.getElementById('ticket-mode-select');
+        const currentMode = modeSelect ? modeSelect.value : 'automatic';
 
-        applyPauseState(isPaused, isPaused && isLunchTime ? 'auto' : 'manual');
+        // Determine if this is an auto lunch-break trigger
+        const now        = new Date();
+        const hhmm       = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        const lbStartRaw = "{{ $lunchBreakStart }}";
+        const lbEndRaw   = "{{ $lunchBreakEnd }}";
+        const isLunchTime = hhmm >= lbStartRaw && hhmm < lbEndRaw;
+        const source      = (isPaused && isLunchTime) ? 'auto' : 'manual';
+
+        // Only sync the dropdown value if:
+        // - Staff is currently in Automatic mode (broadcast can switch it to Manual on auto-pause)
+        // - OR it's a lunch-break auto-resume (switch back to Automatic)
+        // Never force dropdown to Automatic just because isPaused=false while staff is in Manual
+        const syncDropdown = (currentMode === 'automatic') || (!isPaused && source === 'auto');
+
+        applyPauseState(isPaused, source, syncDropdown);
     }
 
     // ── Auto-skip countdown timer ─────────────────────────────────────────────
