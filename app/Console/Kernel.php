@@ -15,7 +15,12 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
+        // Auto-skip students who don't respond within 3 minutes
         $schedule->command('queue:auto-skip')->everyMinute();
+
+        // Auto-pause at lunch break start, auto-resume at lunch break end
+        // Times are configurable via the settings table (lunch_break_start / lunch_break_end)
+        $schedule->command('queue:lunch-break')->everyMinute();
     }
 
     /**

@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+@section('page-title', 'Reset Password OTP')
 @section('content')
 <div class="w-full max-w-sm mx-auto">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 lg:p-8">

@@ -56,17 +56,31 @@ class StaffController extends Controller
             ->orderBy('id', 'asc')
             ->paginate(10);
 
-        $queuePaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $queuePaused      = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $lunchBreakStart  = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
+        $lunchBreakEnd    = DB::table('settings')->where('key', 'lunch_break_end')->value('value')   ?? '13:30';
 
-        return view('admin.dashboard', compact('currentServing', 'waitingCount', 'completedCount', 'skippedCount', 'waitingStudents', 'queuePaused'));
+        return view('admin.dashboard', compact(
+            'currentServing', 'waitingCount', 'completedCount', 'skippedCount',
+            'waitingStudents', 'queuePaused', 'lunchBreakStart', 'lunchBreakEnd'
+        ));
     }
 
     // ─── Queue Pause / Resume ─────────────────────────────────────────────────
 
-    public function togglePause()
+    public function togglePause(Request $request)
     {
+        // Accept explicit action: 'pause' or 'resume'. Fall back to toggle for legacy form posts.
+        $action  = $request->input('action'); // 'pause' | 'resume' | null
         $current = DB::table('settings')->where('key', 'queue_paused')->value('value');
-        $newVal  = $current === '1' ? '0' : '1';
+
+        if ($action === 'pause') {
+            $newVal = '1';
+        } elseif ($action === 'resume') {
+            $newVal = '0';
+        } else {
+            $newVal = $current === '1' ? '0' : '1';
+        }
 
         DB::table('settings')
             ->updateOrInsert(
@@ -77,7 +91,18 @@ class StaffController extends Controller
         // Broadcast so student/TV views update instantly
         $this->broadcastQueueState();
 
-        $msg = $newVal === '1' ? 'Queue paused. Students will see a break notice.' : 'Queue resumed.';
+        $isPaused = $newVal === '1';
+        $msg      = $isPaused ? 'Queue paused. Students will see a break notice.' : 'Queue resumed.';
+
+        // AJAX request — return JSON
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success'      => true,
+                'queue_paused' => $isPaused,
+                'message'      => $msg,
+            ]);
+        }
+
         return back()->with('success', $msg);
     }
 
@@ -208,22 +233,26 @@ class StaffController extends Controller
         $currentServing = QueueEntry::where('status', 'serving')
             ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number', 'served_at', 'updated_at']);
 
-        $waitingCount   = $waitingStudents->count();
-        $completedCount = QueueEntry::where('status', 'completed')->whereDate('created_at', now()->today())->count();
-        $skippedCount   = QueueEntry::where('status', 'no_response')->whereDate('created_at', now()->today())->count();
-        $queuePaused    = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
-        $avgServeTime   = $this->getAvgServeMinutes();
+        $waitingCount      = $waitingStudents->count();
+        $completedCount    = QueueEntry::where('status', 'completed')->whereDate('created_at', now()->today())->count();
+        $skippedCount      = QueueEntry::where('status', 'no_response')->whereDate('created_at', now()->today())->count();
+        $queuePaused       = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
+        $avgServeTime      = $this->getAvgServeMinutes();
+        $lunchBreakStart   = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
+        $lunchBreakEnd     = DB::table('settings')->where('key', 'lunch_break_end')->value('value')   ?? '13:30';
 
         return response()->json([
-            'waiting'         => $waitingStudents,
-            'current'         => $currentServing ? array_merge($currentServing->toArray(), [
+            'waiting'            => $waitingStudents,
+            'current'            => $currentServing ? array_merge($currentServing->toArray(), [
                 'served_at_ts' => ($currentServing->served_at ?? $currentServing->updated_at)->timestamp,
             ]) : null,
-            'waiting_count'   => $waitingCount,
-            'completed_count' => $completedCount,
-            'skipped_count'   => $skippedCount,
-            'queue_paused'    => $queuePaused,
-            'avg_serve_mins'  => $avgServeTime,
+            'waiting_count'      => $waitingCount,
+            'completed_count'    => $completedCount,
+            'skipped_count'      => $skippedCount,
+            'queue_paused'       => $queuePaused,
+            'avg_serve_mins'     => $avgServeTime,
+            'lunch_break_start'  => $lunchBreakStart,
+            'lunch_break_end'    => $lunchBreakEnd,
         ]);
     }
 

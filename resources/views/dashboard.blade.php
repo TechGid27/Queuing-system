@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+@section('page-title', 'Queue Status')
 @section('content')
 {{-- Fix #2: Full-width guest layout, not squeezed into auth-wrap --}}
 <div class="w-full max-w-4xl mx-auto">

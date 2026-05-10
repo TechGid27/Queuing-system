@@ -51,46 +51,34 @@
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
             <div class="flex items-center gap-2">
-                {{-- Ticket Mode dropdown + Pause/Resume buttons --}}
+                {{-- Ticket Mode dropdown + Pause/Resume buttons (all AJAX — no page reload) --}}
                 <div class="flex items-center gap-2 flex-wrap justify-end">
-                    <form action="{{ route('admin.togglePause') }}" method="POST" id="ticket-mode-form">
-                        @csrf
-                        <div class="flex items-center gap-1.5">
-                            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
-                            <select id="ticket-mode-select"
-                                onchange="handleTicketModeChange(this)"
-                                data-paused="{{ $queuePaused ? '1' : '0' }}"
-                                class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
-                                       {{ $queuePaused
-                                           ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
-                                           : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}"
-                                id="ticket-mode-select">
-                                <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
-                                <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
-                            </select>
-                        </div>
-                    </form>
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
+                        <select id="ticket-mode-select"
+                            onchange="handleTicketModeChange(this)"
+                            data-paused="{{ $queuePaused ? '1' : '0' }}"
+                            class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
+                                   {{ $queuePaused
+                                       ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
+                                       : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}">
+                            <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
+                            <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
+                        </select>
+                    </div>
 
                     {{-- Pause / Resume buttons — only visible in Manual mode --}}
                     <div id="pause-resume-btns" class="{{ $queuePaused ? 'flex' : 'hidden' }} items-center gap-1.5">
                         {{-- Pause button — shown when queue is running (not paused) --}}
-                        <form action="{{ route('admin.togglePause') }}" method="POST" id="pause-btn-form"
-                              class="{{ $queuePaused ? 'hidden' : '' }}">
-                            @csrf
-                            <button type="submit"
-                                class="inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                                <i class="bi bi-pause-fill"></i> Pause
-                            </button>
-                        </form>
+                        <button id="pause-btn" onclick="sendPauseAction('pause')"
+                            class="{{ $queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
+                            <i class="bi bi-pause-fill"></i> Pause
+                        </button>
                         {{-- Resume button — shown when queue is paused --}}
-                        <form action="{{ route('admin.togglePause') }}" method="POST" id="resume-btn-form"
-                              class="{{ $queuePaused ? '' : 'hidden' }}">
-                            @csrf
-                            <button type="submit"
-                                class="inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                                <i class="bi bi-play-fill"></i> Resume
-                            </button>
-                        </form>
+                        <button id="resume-btn" onclick="sendPauseAction('resume')"
+                            class="{{ $queuePaused ? '' : 'hidden' }} inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
+                            <i class="bi bi-play-fill"></i> Resume
+                        </button>
                     </div>
                 </div>
                 <span class="badge-live inline-flex items-center gap-1.5 bg-green-50 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full">
@@ -101,8 +89,15 @@
 
         {{-- Paused banner --}}
         <div id="paused-banner" class="{{ $queuePaused ? '' : 'hidden' }} flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
-            <i class="bi bi-pause-circle-fill text-yellow-500 text-base"></i>
-            <span class="font-semibold">Queue is in Manual mode (paused).</span> Auto-skip is disabled. Students see a break notice.
+            <i class="bi bi-pause-circle-fill text-yellow-500 text-base shrink-0"></i>
+            <div>
+                <span class="font-semibold">Queue is paused.</span>
+                <span id="paused-banner-reason"> Auto-skip is disabled. Students see a break notice.</span>
+                <div class="text-xs text-yellow-600 mt-0.5">
+                    Lunch break: <span id="lunch-break-schedule">{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }} – {{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}</span>
+                    &nbsp;·&nbsp; Auto-resumes at <strong id="lunch-break-end-display">{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}</strong>
+                </div>
+            </div>
         </div>
 
         <div id="now-serving-panel">
@@ -239,54 +234,60 @@
 
 @section('scripts')
 <script>
-    // ── Ticket Mode dropdown handler ───────────────────────────────────────────
-    function handleTicketModeChange(select) {
-        const btnsWrap   = document.getElementById('pause-resume-btns');
-        const pauseForm  = document.getElementById('pause-btn-form');
-        const resumeForm = document.getElementById('resume-btn-form');
-        const modeSelect = document.getElementById('ticket-mode-select');
+    const TOGGLE_PAUSE_URL  = "{{ route('admin.togglePause') }}";
+    const CSRF_TOKEN        = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    let   lunchBreakStart   = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }}";
+    let   lunchBreakEnd     = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}";
 
-        if (select.value === 'manual') {
-            // Show pause/resume area
-            btnsWrap.classList.remove('hidden');
-            btnsWrap.classList.add('flex');
+    // ── Core AJAX helper ──────────────────────────────────────────────────────
+    async function sendPauseAction(action) {
+        try {
+            const res = await fetch(TOGGLE_PAUSE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': CSRF_TOKEN,
+                    'Accept':       'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ action }),
+            });
 
-            // Determine which button to show based on current paused state
-            const isPaused = modeSelect.dataset.paused === '1';
-            if (isPaused) {
-                pauseForm.classList.add('hidden');
-                resumeForm.classList.remove('hidden');
-            } else {
-                pauseForm.classList.remove('hidden');
-                resumeForm.classList.add('hidden');
-                // Auto-submit to pause immediately when switching to Manual
-                document.getElementById('ticket-mode-form').submit();
+            const data = await res.json();
+            if (data.success) {
+                applyPauseState(data.queue_paused, 'manual');
+                showToast(data.message, data.queue_paused ? 'warning' : 'success');
             }
-        } else {
-            // Automatic selected — hide buttons and submit to resume
-            btnsWrap.classList.add('hidden');
-            btnsWrap.classList.remove('flex');
-            document.getElementById('ticket-mode-form').submit();
+        } catch (e) {
+            showToast('Failed to update queue mode. Please try again.', 'warning');
         }
     }
 
-    // ── Sync pause/resume buttons from real-time data ──────────────────────────
-    function updatePauseResumeUI(isPaused) {
+    // ── Ticket Mode dropdown handler ──────────────────────────────────────────
+    function handleTicketModeChange(select) {
+        if (select.value === 'manual') {
+            sendPauseAction('pause');
+        } else {
+            sendPauseAction('resume');
+        }
+    }
+
+    // ── Apply pause state to all UI elements (no reload) ─────────────────────
+    // source: 'manual' = staff clicked, 'auto' = lunch break scheduler
+    function applyPauseState(isPaused, source = 'auto') {
         const modeSelect   = document.getElementById('ticket-mode-select');
         const btnsWrap     = document.getElementById('pause-resume-btns');
-        const pauseForm    = document.getElementById('pause-btn-form');
-        const resumeForm   = document.getElementById('resume-btn-form');
+        const pauseBtn     = document.getElementById('pause-btn');
+        const resumeBtn    = document.getElementById('resume-btn');
         const pausedBanner = document.getElementById('paused-banner');
+        const bannerReason = document.getElementById('paused-banner-reason');
 
         if (!modeSelect) return;
 
-        // Store current paused state on the element
         modeSelect.dataset.paused = isPaused ? '1' : '0';
+        modeSelect.value          = isPaused ? 'manual' : 'automatic';
 
-        const isManualMode = modeSelect.value === 'manual';
-
-        // Only update dropdown color — do NOT change the selected value.
-        // The staff chose Manual mode; resuming doesn't switch them back to Automatic.
+        // Dropdown color
         if (isPaused) {
             modeSelect.className = modeSelect.className
                 .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
@@ -297,30 +298,53 @@
                 .trim() + ' bg-green-100 border-green-300 text-green-700 hover:bg-green-200';
         }
 
-        // If in Manual mode, always keep the buttons visible —
-        // just swap which button (Pause vs Resume) is shown.
-        if (isManualMode) {
+        // Pause/Resume buttons
+        const isManual = modeSelect.value === 'manual';
+        if (isManual) {
             btnsWrap.classList.remove('hidden');
             btnsWrap.classList.add('flex');
             if (isPaused) {
-                pauseForm.classList.add('hidden');
-                resumeForm.classList.remove('hidden');
+                pauseBtn?.classList.add('hidden');
+                resumeBtn?.classList.remove('hidden');
             } else {
-                pauseForm.classList.remove('hidden');
-                resumeForm.classList.add('hidden');
+                pauseBtn?.classList.remove('hidden');
+                resumeBtn?.classList.add('hidden');
             }
         } else {
-            // Automatic mode — hide buttons entirely
             btnsWrap.classList.add('hidden');
             btnsWrap.classList.remove('flex');
         }
 
-        // Update paused banner
+        // Banner text — distinguish auto lunch break vs manual pause
+        if (bannerReason) {
+            if (isPaused && source === 'auto') {
+                bannerReason.innerText = ' Lunch break in progress. Auto-skip is disabled. Students see a break notice.';
+            } else if (isPaused) {
+                bannerReason.innerText = ' Manually paused. Auto-skip is disabled. Students see a break notice.';
+            }
+        }
+
         if (pausedBanner) pausedBanner.classList.toggle('hidden', !isPaused);
     }
 
-    // ── Auto-skip countdown timer ──────────────────────────────────────────────
-    const AUTO_SKIP_SECONDS = 3 * 60; // must match AutoSkipQueue command (3 minutes)
+    // ── Called from dashboard_realtime when broadcast arrives ─────────────────
+    function updatePauseResumeUI(isPaused, lbStart, lbEnd) {
+        // Update lunch break times if provided by the API
+        if (lbStart) lunchBreakStart = lbStart;
+        if (lbEnd)   lunchBreakEnd   = lbEnd;
+
+        // Determine if this is an auto lunch-break pause by checking current time
+        const now  = new Date();
+        const hhmm = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        const lbStartRaw = "{{ $lunchBreakStart }}"; // e.g. "12:00"
+        const lbEndRaw   = "{{ $lunchBreakEnd }}";   // e.g. "13:30"
+        const isLunchTime = hhmm >= lbStartRaw && hhmm < lbEndRaw;
+
+        applyPauseState(isPaused, isPaused && isLunchTime ? 'auto' : 'manual');
+    }
+
+    // ── Auto-skip countdown timer ─────────────────────────────────────────────
+    const AUTO_SKIP_SECONDS = 3 * 60;
 
     function updateAutoSkipTimer() {
         const timerEl = document.getElementById('auto-skip-timer');
@@ -333,31 +357,26 @@
         const remaining = AUTO_SKIP_SECONDS - elapsed;
 
         if (remaining <= 0) {
-            // Already past the threshold — auto-skip will fire on next scheduler run
             timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700';
             labelEl.innerText = 'Auto-skipping...';
             return;
         }
 
-        const mins = Math.floor(remaining / 60);
-        const secs = remaining % 60;
+        const mins    = Math.floor(remaining / 60);
+        const secs    = remaining % 60;
         const display = mins + ':' + String(secs).padStart(2, '0');
 
         if (remaining <= 30) {
-            // Last 30 seconds — red urgent
             timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700 animate-pulse';
         } else if (remaining <= 60) {
-            // Last 1 minute — orange warning
             timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-orange-100 text-orange-700';
         } else {
-            // Normal — gray
             timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500';
         }
 
         labelEl.innerText = 'Auto-skip in ' + display;
     }
 
-    // Run immediately then every second
     updateAutoSkipTimer();
     setInterval(updateAutoSkipTimer, 1000);
 </script>

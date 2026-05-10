@@ -15,10 +15,10 @@ Route::get('/api/purposes', [PurposeController::class, 'getActivePurposes'])->na
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.post');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('recaptcha')->name('login.post');
 
     Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-    Route::post('/register', [AuthController::class, 'registerStudent'])->name('register.post');
+    Route::post('/register', [AuthController::class, 'registerStudent'])->middleware('recaptcha')->name('register.post');
 
     // OTP Verification
     Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('student.verify.show');

@@ -29,6 +29,18 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key'        => 'lunch_break_start',
+                'value'      => '12:00',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'key'        => 'lunch_break_end',
+                'value'      => '13:30',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

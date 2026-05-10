@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+@section('page-title', 'Register')
 @section('content')
 <div class="w-full max-w-md mx-auto">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 lg:p-8">
@@ -22,7 +22,7 @@
             </div>
         @endif
 
-        <form action="{{ route('register.post') }}" method="POST" class="space-y-4">
+        <form action="{{ route('register.post') }}" method="POST" class="space-y-4" id="register-form">
             @csrf
 
             <div>
@@ -73,7 +73,17 @@
                     placeholder="••••••••">
             </div>
 
-            <button type="submit"
+            {{-- reCAPTCHA v2 checkbox --}}
+            @if(config('services.recaptcha.site_key'))
+            <div class="flex justify-center">
+                <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+            </div>
+            @error('recaptcha')
+                <p class="text-red-500 text-xs text-center -mt-2">{{ $message }}</p>
+            @enderror
+            @endif
+
+            <button type="submit" id="register-btn"
                 class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">
                 <i class="bi bi-send-fill"></i> Register & Verify Phone
             </button>
@@ -86,6 +96,8 @@
             </p>
         </div>
 
+        </div>
+
     </div>
 </div>
 @endsection
@@ -96,12 +108,11 @@
     const phoneError = document.getElementById('phone-error');
 
     phoneInput.addEventListener('input', function () {
-        // Strip non-digits
         this.value = this.value.replace(/\D/g, '').slice(0, 11);
     });
 
     phoneInput.addEventListener('blur', function () {
-        const val = this.value;
+        const val   = this.value;
         const valid = /^09[0-9]{9}$/.test(val);
         phoneError.classList.toggle('hidden', valid || val === '');
         this.classList.toggle('border-red-400', !valid && val !== '');
@@ -109,7 +120,7 @@
     });
 
     // Block form submit if phone invalid
-    phoneInput.closest('form').addEventListener('submit', function (e) {
+    document.getElementById('register-form').addEventListener('submit', function (e) {
         const val = phoneInput.value;
         if (!/^09[0-9]{9}$/.test(val)) {
             e.preventDefault();
@@ -119,4 +130,8 @@
         }
     });
 </script>
+
+@if(config('services.recaptcha.site_key'))
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+@endif
 @endsection

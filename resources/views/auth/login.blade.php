@@ -1,5 +1,5 @@
 @extends('layouts.app')
-
+@section('page-title', 'Login')
 @section('content')
 <div class="w-full max-w-sm mx-auto">
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-7 lg:p-8">
@@ -26,8 +26,9 @@
             </div>
         @endif
 
-        <form action="{{ route('login') }}" method="POST" class="space-y-4">
+        <form action="{{ route('login') }}" method="POST" class="space-y-4" id="login-form">
             @csrf
+
             <div>
                 <label class="block text-xs font-semibold text-slate-600 mb-1.5">Email Address</label>
                 <input type="email" name="email" value="{{ old('email') }}" required autofocus
@@ -35,12 +36,14 @@
                         {{ $errors->has('email') ? 'border-red-400' : '' }}"
                     placeholder="yourname@example.com">
             </div>
+
             <div>
                 <label class="block text-xs font-semibold text-slate-600 mb-1.5">Password</label>
                 <input type="password" name="password" required
                     class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                     placeholder="••••••••">
             </div>
+
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <input type="checkbox" id="remember" name="remember" class="w-4 h-4 accent-primary rounded">
@@ -50,6 +53,17 @@
                     Forgot password?
                 </a>
             </div>
+
+            {{-- reCAPTCHA v2 "I'm not a robot" checkbox --}}
+            @if(config('services.recaptcha.site_key'))
+            <div class="flex justify-center pt-1">
+                <div class="g-recaptcha" data-sitekey="{{ config('services.recaptcha.site_key') }}"></div>
+            </div>
+            @error('recaptcha')
+                <p class="text-red-500 text-xs text-center">{{ $message }}</p>
+            @enderror
+            @endif
+
             <button type="submit"
                 class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">
                 <i class="bi bi-box-arrow-in-right"></i> Login
@@ -71,4 +85,10 @@
 
     </div>
 </div>
+@endsection
+
+@section('scripts')
+@if(config('services.recaptcha.site_key'))
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
+@endif
 @endsection

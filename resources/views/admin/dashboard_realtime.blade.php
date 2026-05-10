@@ -81,7 +81,7 @@
 
                 // ── Pause/Resume UI sync ──────────────────────────────────
                 if (data.queue_paused !== undefined) {
-                    updatePauseResumeUI(data.queue_paused);
+                    updatePauseResumeUI(data.queue_paused, data.lunch_break_start, data.lunch_break_end);
                 }
 
                 // ── Waiting list ───────────────────────────────────────────

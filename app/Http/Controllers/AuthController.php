@@ -59,7 +59,7 @@ class AuthController extends Controller
                 return redirect()->route('student.verify.show', ['phone' => $user->phone_number])
                     ->with('warning', 'Please verify your phone number first.');
             }
-
+            
             return $user->role === 'staff'
                 ? redirect()->intended(route('admin.index'))
                 : redirect()->intended(route('student.index'));
