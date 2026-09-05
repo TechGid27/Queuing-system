@@ -11,8 +11,8 @@
 
         {{-- Header --}}
         <div class="text-center mb-6">
-            <h1 class="text-xl font-black text-slate-900">Create Account</h1>
-            <p class="text-sm text-slate-400 mt-1">Register to join the virtual queue</p>
+            <h1 class="text-xl font-black text-slate-900">Verify & Get Ticket</h1>
+            <p class="text-sm text-slate-400 mt-1">Please verify your information to get your ticket</p>
         </div>
 
         {{-- Errors --}}
@@ -22,7 +22,7 @@
             </div>
         @endif
 
-        <form action="{{ route('register.post') }}" method="POST" class="space-y-4" id="register-form">
+        <form action="{{ route('private_register.post') }}" method="POST" class="space-y-4" id="register-form">
             @csrf
 
             <div>
@@ -43,8 +43,16 @@
                 @error('email')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
             </div>
 
+            {{-- <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Student ID <span class="text-gray-400">(Optional)</span></label>
+                <input type="text" name="student_id" value="{{ old('student_id') }}" required
+                    class="w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition
+                        {{ $errors->has('student_id') ? 'border-red-400' : 'border-slate-200' }}"
+                    placeholder="Enter your Student ID">
+                @error('student_id')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
+            </div> --}}
             <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
+                <label class="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number <span class="text-red-500">*</span></label>
                 <input type="text" name="phone_number" id="phone_number" value="{{ old('phone_number') }}" required
                     maxlength="11" inputmode="numeric" autocomplete="tel"
                     class="w-full px-3.5 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition
@@ -85,16 +93,22 @@
 
             <button type="submit" id="register-btn"
                 class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors">
-                <i class="bi bi-send-fill"></i> Register & Verify Phone
+                <i class="bi bi-send-fill"></i> Verify Phone & Login
             </button>
         </form>
 
         <div class="border-t border-slate-100 mt-6 pt-5 text-center">
-            <p class="text-sm text-slate-400">
+            {{-- <p class="text-sm text-slate-400">
                 Already have an account?
                 <a href="{{ route('login') }}" class="text-primary font-semibold hover:underline">Login here</a>
-            </p>
+            </p> --}}
+            <div class="text-end mt-4">
+                <a href="{{ route('home') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+                    ← Back to Home
+                </a>
+            </div>
         </div>
+
 
         </div>
 

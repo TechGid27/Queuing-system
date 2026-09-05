@@ -2,6 +2,31 @@
 @section('page-title', 'Dashboard')
 
 @section('content')
+@php
+    $queueOperational = (bool) $selectedDepartment?->is_active;
+@endphp
+
+<div class="bg-white rounded-2xl border border-slate-200 p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+        <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Department Queue</div>
+        <div class="text-lg font-black text-slate-900">{{ $selectedDepartment?->name ?? 'No Department' }}</div>
+    </div>
+    @if($isAdmin)
+        <form action="{{ route('admin.index') }}" method="GET" class="flex items-center gap-2">
+            <label for="admin-department" class="sr-only">Department</label>
+            <select id="admin-department" name="department_id" onchange="this.form.submit()"
+                class="min-w-48 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                @foreach($departments as $department)
+                    <option value="{{ $department->id }}" @selected($selectedDepartment?->id === $department->id)>
+                        {{ $department->name }}{{ $department->is_active ? '' : ' (Inactive)' }}
+                    </option>
+                @endforeach
+            </select>
+        </form>
+    @else
+        <span class="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700">Assigned Department</span>
+    @endif
+</div>
 
 {{-- Stats --}}
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
@@ -50,49 +75,29 @@
     <div class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-5 lg:p-7">
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
-            <div class="flex items-center gap-2">
-                {{-- Ticket Mode dropdown + Pause/Resume buttons (all AJAX — no page reload) --}}
-                <div class="flex items-center gap-2 flex-wrap justify-end">
-                    <div class="flex items-center gap-1.5">
-                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Ticket Mode:</label>
-                        <select id="ticket-mode-select"
-                            onchange="handleTicketModeChange(this)"
-                            data-paused="{{ $queuePaused ? '1' : '0' }}"
-                            class="text-[11px] font-bold px-3 py-1 rounded-full border transition-colors cursor-pointer focus:outline-none
-                                   {{ $queuePaused
-                                       ? 'bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200'
-                                       : 'bg-green-100 border-green-300 text-green-700 hover:bg-green-200' }}">
-                            <option value="automatic" {{ !$queuePaused ? 'selected' : '' }}>⚡ Automatic</option>
-                            <option value="manual"    {{ $queuePaused  ? 'selected' : '' }}>⏸ Manual</option>
-                        </select>
-                    </div>
-
-                    {{-- Pause / Resume buttons — only visible in Manual mode --}}
-                    <div id="pause-resume-btns" class="{{ $queuePaused ? 'flex' : 'hidden' }} items-center gap-1.5">
-                        {{-- Pause button — shown when queue is running (not paused) --}}
-                        <button id="pause-btn" onclick="sendPauseAction('pause')"
-                            class="{{ $queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                            <i class="bi bi-pause-fill"></i> Pause
-                        </button>
-                        {{-- Resume button — shown when queue is paused --}}
-                        <button id="resume-btn" onclick="sendPauseAction('resume')"
-                            class="{{ $queuePaused ? '' : 'hidden' }} inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors">
-                            <i class="bi bi-play-fill"></i> Resume
-                        </button>
-                    </div>
-                </div>
-                <span class="badge-live inline-flex items-center gap-1.5 bg-green-50 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full">
-                    <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> LIVE
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                <button type="button" id="pause-btn" onclick="sendPauseAction('pause')"
+                    class="{{ !$queueOperational || $queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
+                    <i class="bi bi-pause-fill"></i> Pause Queue
+                </button>
+                <button type="button" id="resume-btn" onclick="sendPauseAction('resume')"
+                    class="{{ !$queueOperational || !$queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
+                    <i class="bi bi-play-fill"></i> Resume Queue
+                </button>
+                <span id="queue-status-badge" class="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full
+                    {{ !$queueOperational ? 'bg-slate-100 text-slate-500' : ($queuePaused ? 'bg-yellow-50 text-yellow-700' : 'badge-live bg-green-50 text-green-700') }}">
+                    <span class="w-1.5 h-1.5 rounded-full {{ !$queueOperational ? 'bg-slate-400' : ($queuePaused ? 'bg-yellow-500' : 'bg-green-500') }}"></span>
+                    {{ !$queueOperational ? 'INACTIVE' : ($queuePaused ? 'PAUSED' : 'LIVE') }}
                 </span>
             </div>
         </div>
 
         {{-- Paused banner --}}
-        <div id="paused-banner" class="{{ $queuePaused ? '' : 'hidden' }} flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
+        <div id="paused-banner" class="{{ $queuePaused || !$queueOperational ? '' : 'hidden' }} flex items-center gap-2.5 bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-xl mb-4">
             <i class="bi bi-pause-circle-fill text-yellow-500 text-base shrink-0"></i>
             <div>
-                <span class="font-semibold">Queue is paused.</span>
-                <span id="paused-banner-reason"> Auto-skip is disabled. Students see a break notice.</span>
+                <span class="font-semibold" id="paused-banner-title">{{ $queueOperational ? 'Queue is paused.' : 'Department is inactive.' }}</span>
+                <span id="paused-banner-reason"> {{ $queueOperational ? 'Auto-skip is disabled. Students see a break notice.' : 'Queue actions and new tickets are disabled.' }}</span>
                 <div class="text-xs text-yellow-600 mt-0.5">
                     Lunch break: <span id="lunch-break-schedule">{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }} – {{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}</span>
                     &nbsp;·&nbsp; Auto-resumes at <strong id="lunch-break-end-display">{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}</strong>
@@ -120,19 +125,22 @@
             <div class="border-t border-slate-100 pt-5 mt-2 flex flex-wrap gap-2 justify-center">
                 <form action="{{ route('admin.reject', $currentServing->id) }}" method="POST">
                     @csrf
-                    <button type="submit" class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
+                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                    <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-skip-forward-fill"></i> Skip / No Show
                     </button>
                 </form>
                 <form action="{{ route('admin.complete', $currentServing->id) }}" method="POST">
                     @csrf
-                    <button type="submit" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
+                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                    <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-check-lg"></i> Complete
                     </button>
                 </form>
                 <form action="{{ route('admin.callNext') }}" method="POST">
                     @csrf
-                    <button type="submit" {{ $waitingCount == 0 ? 'disabled' : '' }}
+                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-arrow-right-circle-fill"></i> Call Next
                     </button>
@@ -144,7 +152,8 @@
                 <div class="text-base font-semibold text-slate-400">No student is currently being served</div>
                 <form action="{{ route('admin.callNext') }}" method="POST" class="mt-6 inline-block">
                     @csrf
-                    <button type="submit" {{ $waitingCount == 0 ? 'disabled' : '' }}
+                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-play-circle-fill"></i> Call First Student
                     </button>
@@ -186,8 +195,8 @@
 
         {{-- Pagination --}}
         @if($waitingStudents->hasPages())
-            <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <span class="text-xs text-slate-400">
+             <div class="px-4 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                 <span class="text-xs text-slate-400" id="pagination-summary">
                     Page {{ $waitingStudents->currentPage() }} of {{ $waitingStudents->lastPage() }}
                 </span>
                 <div class="flex items-center gap-1">
@@ -236,11 +245,20 @@
 <script>
     const TOGGLE_PAUSE_URL  = "{{ route('admin.togglePause') }}";
     const CSRF_TOKEN        = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const SELECTED_DEPARTMENT_ID = {{ $selectedDepartment?->id ?? 'null' }};
+    const QUEUE_OPERATIONAL = {{ $queueOperational ? 'true' : 'false' }};
+    let   queueIsPaused     = {{ $queuePaused ? 'true' : 'false' }};
     let   lunchBreakStart   = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }}";
     let   lunchBreakEnd     = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}";
 
-    // ── Core AJAX helper ──────────────────────────────────────────────────────
     async function sendPauseAction(action) {
+        if (!SELECTED_DEPARTMENT_ID || !QUEUE_OPERATIONAL) return;
+
+        const pauseBtn = document.getElementById('pause-btn');
+        const resumeBtn = document.getElementById('resume-btn');
+        if (pauseBtn) pauseBtn.disabled = true;
+        if (resumeBtn) resumeBtn.disabled = true;
+
         try {
             const res = await fetch(TOGGLE_PAUSE_URL, {
                 method: 'POST',
@@ -250,137 +268,90 @@
                     'Accept':       'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                body: JSON.stringify({ action }),
+                body: JSON.stringify({ action, department_id: SELECTED_DEPARTMENT_ID }),
             });
 
             const data = await res.json();
-            if (data.success) {
-                // Pause/Resume buttons clicked by staff — keep dropdown as-is (still Manual)
-                applyPauseState(data.queue_paused, 'manual', false);
-                showToast(data.message, data.queue_paused ? 'warning' : 'success');
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Unable to update the queue.');
             }
+
+            applyPauseState(data.queue_paused, 'manual');
+            showToast(data.message, data.queue_paused ? 'warning' : 'success');
         } catch (e) {
-            showToast('Failed to update queue mode. Please try again.', 'warning');
+            showToast(e.message || 'Failed to update the queue. Please try again.', 'warning');
+        } finally {
+            if (pauseBtn) pauseBtn.disabled = false;
+            if (resumeBtn) resumeBtn.disabled = false;
         }
     }
 
-    // ── Ticket Mode dropdown handler ──────────────────────────────────────────
-    function handleTicketModeChange(select) {
-        if (select.value === 'manual') {
-            // Staff switched to Manual → pause + update dropdown color
-            applyDropdownColor(true);
-            sendPauseAction('pause');
-        } else {
-            // Staff switched to Automatic → resume + hide buttons
-            applyDropdownColor(false);
-            const btnsWrap = document.getElementById('pause-resume-btns');
-            btnsWrap.classList.add('hidden');
-            btnsWrap.classList.remove('flex');
-            sendPauseAction('resume');
-        }
-    }
-
-    // ── Update dropdown color only ────────────────────────────────────────────
-    // colorPaused: true = yellow (paused), false = green (running)
-    // But if we're in Manual mode and just resumed, still show yellow (still manual)
-    function applyDropdownColor(isPaused) {
-        const modeSelect = document.getElementById('ticket-mode-select');
-        if (!modeSelect) return;
-
-        // In Manual mode, always yellow regardless of pause state
-        const forceYellow = modeSelect.value === 'manual';
-
-        if (isPaused || forceYellow) {
-            modeSelect.className = modeSelect.className
-                .replace(/bg-green-\S+|border-green-\S+|text-green-\S+|hover:bg-green-\S+/g, '')
-                .trim() + ' bg-yellow-100 border-yellow-300 text-yellow-700 hover:bg-yellow-200';
-        } else {
-            modeSelect.className = modeSelect.className
-                .replace(/bg-yellow-\S+|border-yellow-\S+|text-yellow-\S+|hover:bg-yellow-\S+/g, '')
-                .trim() + ' bg-green-100 border-green-300 text-green-700 hover:bg-green-200';
-        }
-    }
-
-    // ── Apply pause state to all UI elements (no reload) ─────────────────────
-    // source:         'manual' = staff action, 'auto' = lunch break scheduler
-    // syncDropdown:   true  = also update dropdown value (used by broadcast/realtime)
-    //                 false = leave dropdown value alone (used by Pause/Resume button clicks)
-    function applyPauseState(isPaused, source = 'auto', syncDropdown = true) {
-        const modeSelect   = document.getElementById('ticket-mode-select');
-        const btnsWrap     = document.getElementById('pause-resume-btns');
+    function applyPauseState(isPaused, source = 'auto') {
+        queueIsPaused = Boolean(isPaused);
         const pauseBtn     = document.getElementById('pause-btn');
         const resumeBtn    = document.getElementById('resume-btn');
         const pausedBanner = document.getElementById('paused-banner');
+        const bannerTitle  = document.getElementById('paused-banner-title');
         const bannerReason = document.getElementById('paused-banner-reason');
+        const statusBadge  = document.getElementById('queue-status-badge');
 
-        if (!modeSelect) return;
-
-        modeSelect.dataset.paused = isPaused ? '1' : '0';
-
-        // Only sync dropdown value when explicitly requested (e.g. page load / broadcast)
-        // NOT when staff clicks Pause/Resume — they stay in Manual mode
-        if (syncDropdown) {
-            modeSelect.value = isPaused ? 'manual' : 'automatic';
-        }
-
-        // Dropdown color follows actual pause state
-        applyDropdownColor(isPaused);
-
-        // Pause/Resume buttons: only visible when dropdown is Manual
-        const isManual = modeSelect.value === 'manual';
-        if (isManual) {
-            btnsWrap.classList.remove('hidden');
-            btnsWrap.classList.add('flex');
-            // Swap which button shows based on current pause state
-            if (isPaused) {
-                pauseBtn?.classList.add('hidden');
-                resumeBtn?.classList.remove('hidden');
-            } else {
-                // Resumed but still in Manual — show Pause button so staff can re-pause
-                pauseBtn?.classList.remove('hidden');
-                resumeBtn?.classList.add('hidden');
-            }
+        if (QUEUE_OPERATIONAL) {
+            pauseBtn?.classList.toggle('hidden', queueIsPaused);
+            resumeBtn?.classList.toggle('hidden', !queueIsPaused);
         } else {
-            // Automatic mode — hide both buttons
-            btnsWrap.classList.add('hidden');
-            btnsWrap.classList.remove('flex');
+            pauseBtn?.classList.add('hidden');
+            resumeBtn?.classList.add('hidden');
         }
 
-        // Banner text
-        if (bannerReason) {
-            if (isPaused && source === 'auto') {
+        if (bannerTitle) {
+            bannerTitle.innerText = QUEUE_OPERATIONAL ? 'Queue is paused.' : 'Department is inactive.';
+        }
+        if (bannerReason && QUEUE_OPERATIONAL) {
+            if (queueIsPaused && source === 'auto') {
                 bannerReason.innerText = ' Lunch break in progress. Auto-skip is disabled. Students see a break notice.';
-            } else if (isPaused) {
+            } else if (queueIsPaused) {
                 bannerReason.innerText = ' Manually paused. Auto-skip is disabled. Students see a break notice.';
             }
         }
 
-        if (pausedBanner) pausedBanner.classList.toggle('hidden', !isPaused);
+        if (pausedBanner) pausedBanner.classList.toggle('hidden', QUEUE_OPERATIONAL && !queueIsPaused);
+
+        if (statusBadge) {
+            const label = !QUEUE_OPERATIONAL ? 'INACTIVE' : (queueIsPaused ? 'PAUSED' : 'LIVE');
+            const colors = !QUEUE_OPERATIONAL
+                ? ['bg-slate-100', 'text-slate-500', 'bg-slate-400']
+                : (queueIsPaused
+                    ? ['bg-yellow-50', 'text-yellow-700', 'bg-yellow-500']
+                    : ['bg-green-50', 'text-green-700', 'bg-green-500']);
+            statusBadge.className = `inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full ${colors[0]} ${colors[1]}`;
+            statusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${colors[2]}"></span>${label}`;
+        }
+
+        document.querySelectorAll('[data-department-active]').forEach(button => {
+            button.disabled = !QUEUE_OPERATIONAL;
+        });
+        document.querySelectorAll('[data-queue-running]').forEach(button => {
+            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1';
+        });
     }
 
-    // ── Called from dashboard_realtime when broadcast arrives ─────────────────
-    function updatePauseResumeUI(isPaused, lbStart, lbEnd) {
-        if (lbStart) lunchBreakStart = lbStart;
-        if (lbEnd)   lunchBreakEnd   = lbEnd;
+    function updatePauseResumeUI(isPaused, lbStart, lbEnd, pauseSource = 'manual') {
+        const formatTime = value => {
+            if (!value || !value.includes(':')) return value;
+            const [hour, minute] = value.split(':').map(Number);
+            const suffix = hour >= 12 ? 'PM' : 'AM';
+            return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`;
+        };
 
-        const modeSelect = document.getElementById('ticket-mode-select');
-        const currentMode = modeSelect ? modeSelect.value : 'automatic';
+        if (lbStart) lunchBreakStart = formatTime(lbStart);
+        if (lbEnd) lunchBreakEnd = formatTime(lbEnd);
 
-        // Determine if this is an auto lunch-break trigger
-        const now        = new Date();
-        const hhmm       = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-        const lbStartRaw = "{{ $lunchBreakStart }}";
-        const lbEndRaw   = "{{ $lunchBreakEnd }}";
-        const isLunchTime = hhmm >= lbStartRaw && hhmm < lbEndRaw;
-        const source      = (isPaused && isLunchTime) ? 'auto' : 'manual';
+        const schedule = document.getElementById('lunch-break-schedule');
+        const endDisplay = document.getElementById('lunch-break-end-display');
+        if (schedule) schedule.innerText = `${lunchBreakStart} - ${lunchBreakEnd}`;
+        if (endDisplay) endDisplay.innerText = lunchBreakEnd;
 
-        // Only sync the dropdown value if:
-        // - Staff is currently in Automatic mode (broadcast can switch it to Manual on auto-pause)
-        // - OR it's a lunch-break auto-resume (switch back to Automatic)
-        // Never force dropdown to Automatic just because isPaused=false while staff is in Manual
-        const syncDropdown = (currentMode === 'automatic') || (!isPaused && source === 'auto');
-
-        applyPauseState(isPaused, source, syncDropdown);
+        applyPauseState(isPaused, pauseSource === 'lunch' ? 'auto' : 'manual');
     }
 
     // ── Auto-skip countdown timer ─────────────────────────────────────────────
@@ -390,6 +361,12 @@
         const timerEl = document.getElementById('auto-skip-timer');
         const labelEl = document.getElementById('auto-skip-label');
         if (!timerEl || !labelEl) return;
+
+        if (queueIsPaused || !QUEUE_OPERATIONAL) {
+            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-yellow-100 text-yellow-700';
+            labelEl.innerText = 'Auto-skip paused';
+            return;
+        }
 
         const servedAt  = parseInt(timerEl.dataset.servedAt, 10);
         const now       = Math.floor(Date.now() / 1000);
@@ -417,6 +394,7 @@
         labelEl.innerText = 'Auto-skip in ' + display;
     }
 
+    applyPauseState(queueIsPaused);
     updateAutoSkipTimer();
     setInterval(updateAutoSkipTimer, 1000);
 </script>

@@ -9,9 +9,32 @@
         <i class="bi bi-pause-circle-fill text-yellow-500 text-xl shrink-0"></i>
         <div>
             <div class="font-bold text-sm">Queue is currently on break</div>
-            <div class="text-xs text-yellow-600 mt-0.5">The Cashier's office is temporarily unavailable. Please wait — the queue will resume shortly.</div>
+            <div class="text-xs text-yellow-600 mt-0.5">This department is temporarily unavailable. Please wait for the queue to resume.</div>
         </div>
     </div>
+</div>
+
+<div class="bg-white rounded-2xl border border-slate-200 p-4 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div>
+        <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Department Queue</div>
+        <div class="font-black text-slate-900">{{ $selectedDepartment?->name ?? 'No active department' }}</div>
+    </div>
+    @if(!$myTicket)
+        <form action="{{ route('student.index') }}" method="GET">
+            <label for="student-department" class="sr-only">Department</label>
+            <select id="student-department" name="department_id" onchange="this.form.submit()"
+                class="min-w-48 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                @foreach($departments as $department)
+                    <option value="{{ $department->id }}" @selected($selectedDepartment?->id === $department->id)>{{ $department->name }}</option>
+                @endforeach
+                @if($departments->isEmpty())
+                    <option value="" selected disabled>No active departments</option>
+                @endif
+            </select>
+        </form>
+    @else
+        <span class="text-xs font-semibold px-3 py-1.5 rounded-full bg-blue-50 text-blue-700">Your active ticket</span>
+    @endif
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -104,7 +127,7 @@
                         </span>
                     </div>
                     @if($myPosition && $myTicket->status === 'waiting')
-                    <div class="mt-3 text-xs text-slate-400">
+                    <div class="mt-3 text-xs text-slate-400" id="my-position-row">
                         Position <span class="font-bold text-slate-600" id="my-position">#{{ $myPosition }}</span>
                         &nbsp;·&nbsp;
                         Est. <span class="font-bold text-slate-600" id="my-est-time">~{{ round($myPosition * $avgServeTime) }} min</span>
@@ -119,7 +142,7 @@
                         class="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
                         <i class="bi bi-printer"></i> Print Ticket
                     </button>
-                    <a href="{{ route('student.index') }}"
+                    <a href="{{ route('student.index', ['department_id' => $selectedDepartment?->id]) }}"
                         class="w-full flex items-center justify-center gap-2 border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
                         <i class="bi bi-arrow-clockwise"></i> Refresh
                     </a>
@@ -137,6 +160,10 @@
 
             <form action="{{ route('queue.store') }}" method="POST">
                 @csrf
+                <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                @error('department_id')
+                    <p class="text-red-500 text-xs mb-3">{{ $message }}</p>
+                @enderror
                 <div class="mb-4">
                     <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Purpose of Visit</label>
                     <select name="purpose_id" id="purpose-select" required
@@ -145,25 +172,26 @@
                                {{ $errors->has('purpose_id') ? 'border-red-400' : '' }}">
                         <option value="">Choose one...</option>
                         @foreach($purposes as $purpose)
-                            <option value="{{ $purpose->id }}">{{ $purpose->name }}</option>
+                            <option value="{{ $purpose->id }}" @selected(old('purpose_id') == $purpose->id)>{{ $purpose->name }}</option>
                         @endforeach
-                        <option value="other">Other</option>
+                        <option value="other" @selected(old('purpose_id') === 'other')>Other</option>
                     </select>
                     @error('purpose_id')
                         <p class="text-red-500 text-xs mt-1.5">{{ $message }}</p>
                     @enderror
 
                     {{-- Other purpose text field (hidden by default) --}}
-                    <div id="other-purpose-wrap" class="hidden mt-2">
+                    <div id="other-purpose-wrap" class="{{ old('purpose_id') === 'other' ? '' : 'hidden' }} mt-2">
                         <input type="text" name="other_purpose" id="other-purpose-input"
+                            value="{{ old('other_purpose') }}"
                             placeholder="Please describe your purpose..."
                             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition">
                         <p class="text-xs text-slate-400 mt-1">Describe your purpose of visit.</p>
                     </div>
                 </div>
 
-                <button type="submit"
-                    class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors mt-2">
+                <button type="submit" id="join-queue-button" {{ !$selectedDepartment || $queuePaused ? 'disabled' : '' }}
+                    class="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-3 rounded-xl transition-colors mt-2 disabled:opacity-40 disabled:cursor-not-allowed">
                     <i class="bi bi-ticket-perforated-fill"></i> Join Virtual Queue
                 </button>
                 <p class="text-center text-xs text-slate-400 mt-3">A virtual ticket will be generated instantly.</p>
@@ -191,144 +219,151 @@
         }
     }
 
-    // Avg serve time from server (minutes per student)
     let avgServeMins = {{ $avgServeTime }};
-    let queuePaused  = {{ $queuePaused ? 'true' : 'false' }};
+    let queuePaused = {{ $queuePaused ? 'true' : 'false' }};
+    let terminalTicketHandled = false;
+    let lastMyTicketStatus = @json($myTicket?->status);
+    const departmentId = {{ $selectedDepartment?->id ?? 'null' }};
+    const myTicketNumber = @json($myTicket?->ticket_number);
 
-    function updateEstWait(waitingCount, avg, paused) {
-        const estEl   = document.getElementById('est-wait-time');
-        const posEl   = document.getElementById('my-position');
-        const myEstEl = document.getElementById('my-est-time');
+    function updateEstWait(waitingCount, avg, paused, myPosition = null) {
+        const estEl = document.getElementById('est-wait-time');
+        const labelEl = document.getElementById('est-wait-label');
+        const hasPersonalPosition = myPosition !== null;
+        const position = hasPersonalPosition ? myPosition : waitingCount;
 
         if (estEl) {
-            if (paused) {
-                estEl.innerText = 'On Break';
-            } else if (waitingCount > 0) {
-                estEl.innerText = '~' + Math.round(waitingCount * avg) + ' min';
-            } else {
-                estEl.innerText = 'Ready';
-            }
+            estEl.innerText = paused
+                ? 'On Break'
+                : (position > 0 ? `~${Math.round(position * avg)} min` : 'Ready');
+        }
+        if (labelEl) {
+            labelEl.innerText = hasPersonalPosition
+                ? (myPosition > 0 ? `Your est. wait (pos. #${myPosition})` : 'Your ticket is being served')
+                : `Est. Wait (avg ${avg} min/student)`;
         }
 
-        // Update per-ticket estimate if position is known
-        if (posEl && myEstEl) {
-            const pos = parseInt(posEl.innerText.replace('#', ''), 10);
-            if (!isNaN(pos)) {
-                myEstEl.innerText = '~' + Math.round(pos * avg) + ' min';
-            }
-        }
+        const posEl = document.getElementById('my-position');
+        const myEstEl = document.getElementById('my-est-time');
+        if (posEl && myPosition) posEl.innerText = `#${myPosition}`;
+        if (myEstEl && myPosition) myEstEl.innerText = `~${Math.round(myPosition * avg)} min`;
     }
 
     function updatePauseBanner(paused) {
-        const banner = document.getElementById('pause-banner');
-        if (banner) banner.classList.toggle('hidden', !paused);
+        document.getElementById('pause-banner')?.classList.toggle('hidden', !paused);
+        document.getElementById('live-badge')?.classList.toggle('hidden', paused);
+        document.getElementById('break-badge')?.classList.toggle('hidden', !paused);
 
-        // "Now Serving" badge — swap LIVE ↔ ON BREAK
-        const liveEl  = document.getElementById('live-badge');
-        const breakEl = document.getElementById('break-badge');
-        const numEl   = document.getElementById('current-number');
-        if (liveEl)  liveEl.classList.toggle('hidden', paused);
-        if (breakEl) breakEl.classList.toggle('hidden', !paused);
-        if (numEl) {
-            numEl.classList.toggle('text-red-600', !paused);
-            numEl.classList.toggle('text-slate-300', paused);
+        const number = document.getElementById('current-number');
+        number?.classList.toggle('text-red-600', !paused);
+        number?.classList.toggle('text-slate-300', paused);
+
+        const joinButton = document.getElementById('join-queue-button');
+        if (joinButton) joinButton.disabled = paused || !departmentId;
+    }
+
+    function updateMyTicket(ticket) {
+        if (!myTicketNumber || !ticket || ticket.ticket_number !== myTicketNumber) return;
+
+        const status = document.getElementById('my-ticket-status');
+        const positionRow = document.getElementById('my-position-row');
+        if (!status) return;
+
+        if (ticket.status === 'waiting') {
+            status.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700';
+            status.innerText = 'WAITING';
+            positionRow?.classList.remove('hidden');
+            lastMyTicketStatus = ticket.status;
+            return;
+        }
+
+        positionRow?.classList.add('hidden');
+        if (ticket.status === 'serving') {
+            status.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-green-100 text-green-700';
+            status.innerText = 'YOUR TURN NOW!';
+            if (lastMyTicketStatus !== 'serving') {
+                showToast("It's your turn. Please proceed to the window.", 'success');
+            }
+            lastMyTicketStatus = ticket.status;
+            return;
+        }
+
+        if (terminalTicketHandled || !['completed', 'no_response', 'skipped'].includes(ticket.status)) return;
+        terminalTicketHandled = true;
+        const completed = ticket.status === 'completed';
+        status.className = `inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full ${completed ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`;
+        status.innerText = completed ? 'COMPLETED' : 'SKIPPED';
+        showToast(completed ? 'Your transaction is done. Thank you for visiting!' : 'You were skipped. Please re-queue.', completed ? 'success' : 'warning');
+        setTimeout(() => window.location.reload(), 3000);
+    }
+
+    function renderQueueStatus(data) {
+        const current = document.getElementById('current-number');
+        const next = document.getElementById('next-number');
+        const waiting = document.getElementById('waiting-count');
+
+        if (current && data.current !== undefined) current.innerText = data.current;
+        if (next && data.next !== undefined) next.innerText = data.next;
+        if (waiting && data.waiting_count !== undefined) waiting.innerText = data.waiting_count;
+        if (data.avg_serve_mins !== undefined) avgServeMins = data.avg_serve_mins;
+        if (data.queue_paused !== undefined) queuePaused = data.queue_paused;
+
+        updatePauseBanner(queuePaused);
+        updateMyTicket(data.my_ticket);
+        const personalPosition = data.my_ticket && myTicketNumber
+            ? (data.my_ticket.position ?? 0)
+            : null;
+        updateEstWait(data.waiting_count ?? 0, avgServeMins, queuePaused, personalPosition);
+    }
+
+    async function refreshQueueStatus() {
+        if (!departmentId) return;
+        const statusUrl = new URL('{{ route("api.queueStatus") }}', window.location.origin);
+        statusUrl.searchParams.set('department_id', departmentId);
+
+        try {
+            const response = await fetch(statusUrl);
+            if (!response.ok) return;
+            renderQueueStatus(await response.json());
+        } catch (error) {
+            // Keep the last known state and try again on the next polling interval.
         }
     }
 
-    if (window.Echo) {
-        window.Echo.channel('queue').listen('.queue.updated', function(data) {
-            const currentEl = document.getElementById('current-number');
-            const nextEl    = document.getElementById('next-number');
-            const waitEl    = document.getElementById('waiting-count');
+    function renderPurposes(data) {
+        const purposeSelect = document.querySelector('select[name="purpose_id"]');
+        if (!purposeSelect || !data.purposes) return;
 
-            if (currentEl && data.current && currentEl.innerText !== data.current) {
-                currentEl.style.opacity = '0.3';
-                currentEl.style.transition = 'opacity .2s';
-                setTimeout(() => { currentEl.innerText = data.current; currentEl.style.opacity = '1'; }, 200);
-            }
-            if (nextEl) nextEl.innerText = data.next ?? 'Waiting';
-            if (waitEl && data.waiting_count !== undefined) waitEl.innerText = data.waiting_count;
-
-            // Update avg and pause state if provided
-            if (data.avg_serve_mins) avgServeMins = data.avg_serve_mins;
-            if (data.queue_paused !== undefined) queuePaused = data.queue_paused;
-
-            updateEstWait(data.waiting_count ?? 0, avgServeMins, queuePaused);
-            updatePauseBanner(queuePaused);
-            const myTicketEl = document.getElementById('my-ticket-number');
-            const myStatusEl = document.getElementById('my-ticket-status');
-            if (!myTicketEl || !myStatusEl) return;
-
-            const myTicket = myTicketEl.innerText.trim();
-
-            if (data.current === myTicket) {
-                myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-green-100 text-green-700';
-                myStatusEl.innerText = '🟢 YOUR TURN NOW!';
-                showToast("🔔 It's your turn! Please proceed to the window.", 'success');
-            }
-
-            if (data.completed_ticket === myTicket) {
-                myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-blue-100 text-blue-700';
-                myStatusEl.innerText = '✅ COMPLETED';
-                showToast("✅ Your transaction is done. Thank you for visiting!", 'success');
-                setTimeout(() => window.location.reload(), 4000);
-            }
-
-            if (data.skipped_ticket === myTicket) {
-                myStatusEl.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-red-100 text-red-700';
-                myStatusEl.innerText = '⚠️ SKIPPED';
-                showToast("⚠️ You were skipped. Please re-queue at the window.", 'warning');
-                setTimeout(() => window.location.reload(), 4000);
-            }
+        const currentValue = purposeSelect.value;
+        purposeSelect.replaceChildren(new Option('Choose one...', ''));
+        data.purposes.forEach(purpose => {
+            if (!purpose.is_active) return;
+            purposeSelect.appendChild(new Option(purpose.name, purpose.id, false, String(purpose.id) === currentValue));
         });
-
-        window.Echo.channel('purposes').listen('.purposes.updated', function(data) {
-            const purposeSelect = document.querySelector('select[name="purpose_id"]');
-            if (!purposeSelect || !data.purposes) return;
-            const currentValue = purposeSelect.value;
-            purposeSelect.innerHTML = '<option value="">Choose one...</option>';
-            data.purposes.forEach(purpose => {
-                if (purpose.is_active) {
-                    const option = document.createElement('option');
-                    option.value = purpose.id;
-                    option.textContent = purpose.name;
-                    if (purpose.id == currentValue) option.selected = true;
-                    purposeSelect.appendChild(option);
-                }
-            });
-            showToast("📋 Purpose options updated!", 'success');
-        });
-
-    } else {
-        // Fallback polling
-        setInterval(() => {
-            fetch('{{ route("api.queueStatus") }}').then(r => r.json()).then(data => {
-                const c = document.getElementById('current-number');
-                const n = document.getElementById('next-number');
-                const w = document.getElementById('waiting-count');
-                if (c && data.current) c.innerText = data.current;
-                if (n && data.next)    n.innerText = data.next;
-                if (data.avg_serve_mins) avgServeMins = data.avg_serve_mins;
-                if (data.queue_paused !== undefined) queuePaused = data.queue_paused;
-                const wCount = w ? parseInt(w.innerText, 10) : 0;
-                updateEstWait(wCount, avgServeMins, queuePaused);
-                updatePauseBanner(queuePaused);
-            });
-            fetch('{{ route("api.purposes") }}').then(r => r.json()).then(data => {
-                const purposeSelect = document.querySelector('select[name="purpose_id"]');
-                if (!purposeSelect || !data.purposes) return;
-                const currentValue = purposeSelect.value;
-                purposeSelect.innerHTML = '<option value="">Choose one...</option>';
-                data.purposes.forEach(purpose => {
-                    const option = document.createElement('option');
-                    option.value = purpose.id;
-                    option.textContent = purpose.name;
-                    if (purpose.id == currentValue) option.selected = true;
-                    purposeSelect.appendChild(option);
-                });
-            });
-        }, 5000);
+        purposeSelect.appendChild(new Option('Other', 'other', false, currentValue === 'other'));
+        handlePurposeChange(purposeSelect);
     }
+
+    async function refreshPurposes() {
+        try {
+            const response = await fetch('{{ route("api.purposes") }}');
+            if (response.ok) renderPurposes(await response.json());
+        } catch (error) {
+            // The existing choices remain usable until the next refresh.
+        }
+    }
+
+    if (window.Echo && departmentId) {
+        window.Echo.channel(`queue.${departmentId}`).listen('.queue.updated', refreshQueueStatus);
+        window.Echo.channel('purposes').listen('.purposes.updated', renderPurposes);
+    }
+
+    const initialPurposeSelect = document.querySelector('select[name="purpose_id"]');
+    if (initialPurposeSelect) handlePurposeChange(initialPurposeSelect);
+    updatePauseBanner(queuePaused);
+    refreshQueueStatus();
+    setInterval(refreshQueueStatus, 5000);
+    setInterval(refreshPurposes, 30000);
 </script>
 <style>
     @media print {

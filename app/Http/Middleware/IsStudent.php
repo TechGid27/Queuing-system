@@ -4,22 +4,26 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class IsStudent
 {
     /**
      * Handle an incoming request.
      *
-     * @param  \Illuminate\Http\Request  $request
      * @param  \Closure(\Illuminate\Http\Request): (\Illuminate\Http\Response|\Illuminate\Http\RedirectResponse)  $next
      * @return \Illuminate\Http\Response|\Illuminate\Http\RedirectResponse
      */
     public function handle(Request $request, Closure $next)
     {
-        if (auth()->check() && auth()->user()->role === 'student') {
+        $student = Auth::guard('student')->user();
+
+        if ($student && $student->role === 'student' && $student->isPhoneVerified()) {
+            Auth::shouldUse('student');
+
             return $next($request);
         }
 
-        return redirect()->route('login')->with('error', 'Please log in as a student.');
+        return redirect()->route('register')->with('error', 'Please verify your phone number first.');
     }
 }

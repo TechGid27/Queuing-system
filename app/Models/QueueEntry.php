@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class QueueEntry extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'ticket_number',
         'name',
@@ -17,12 +18,25 @@ class QueueEntry extends Model
         'served_at',
         'completed_at',
         'user_id',
+        'guest_id',
+        'department_id',
+        'queue_date',
         'purpose_id',
     ];
 
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function guest()
+    {
+        return $this->belongsTo(Guest::class);
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
     }
 
     public function purposeModel()
@@ -33,5 +47,6 @@ class QueueEntry extends Model
     protected $casts = [
         'served_at' => 'datetime',
         'completed_at' => 'datetime',
+        'queue_date' => 'date',
     ];
 }

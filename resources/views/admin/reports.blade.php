@@ -6,15 +6,28 @@
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
     <div>
         <h1 class="text-xl font-black text-slate-900">Queue Reports</h1>
-        <p class="text-sm text-slate-400 mt-0.5">Daily activity logs and summaries</p>
+        <p class="text-sm text-slate-400 mt-0.5">{{ $selectedDepartment?->name ?? 'No department' }} daily activity logs and summaries</p>
     </div>
     <div class="flex flex-wrap gap-2 items-center">
-        <form action="{{ route('admin.reports') }}" method="GET">
+        <form action="{{ route('admin.reports') }}" method="GET" class="flex flex-wrap gap-2">
+            @if($isAdmin)
+            <label for="report-department" class="sr-only">Department</label>
+            <select id="report-department" name="department_id" onchange="this.form.submit()"
+                class="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                @foreach($departments as $department)
+                    <option value="{{ $department->id }}" @selected($selectedDepartment?->id === $department->id)>
+                        {{ $department->name }}{{ $department->is_active ? '' : ' (Inactive)' }}
+                    </option>
+                @endforeach
+            </select>
+            @else
+                <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+            @endif
             <input type="date" name="date" value="{{ $date }}" onchange="this.form.submit()"
                 class="px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition">
         </form>
-        <a href="{{ route('admin.reports.download', ['date' => $date]) }}"
-            class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-2 rounded-xl transition-colors">
+        <a href="{{ $selectedDepartment ? route('admin.reports.download', ['date' => $date, 'department_id' => $selectedDepartment->id]) : '#' }}"
+            class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold text-sm px-4 py-2 rounded-xl transition-colors {{ $selectedDepartment ? '' : 'opacity-40 pointer-events-none' }}">
             <i class="bi bi-download"></i> Download PDF
         </a>
     </div>
@@ -62,14 +75,14 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Avg. Duration</div>
-            <div class="text-xl font-black text-yellow-600">{{ $avgMins ? round($avgMins).'m' : '--' }}</div>
+            <div class="text-xl font-black text-yellow-600">{{ $avgMins !== null ? round($avgMins).'m' : '--' }}</div>
         </div>
     </div>
 </div>
 
 <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
     <div class="px-5 py-4 border-b border-slate-100 text-sm font-bold text-slate-800">
-        Records for {{ \Carbon\Carbon::parse($date)->format('F d, Y') }}
+        {{ $selectedDepartment?->name ?? 'Department' }} records for {{ \Carbon\Carbon::parse($date)->format('F d, Y') }}
     </div>
     <div class="overflow-x-auto">
         <table class="w-full text-sm">

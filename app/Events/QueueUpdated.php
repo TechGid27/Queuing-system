@@ -2,6 +2,9 @@
 
 namespace App\Events;
 
+use App\Http\Controllers\StaffController;
+use App\Models\Department;
+use App\Models\QueueEntry;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -18,13 +21,17 @@ class QueueUpdated implements ShouldBroadcastNow
     public ?string $completedTicket;
     public ?string $skippedTicket;
 
+    public int $departmentId;
+
     public function __construct(
+        int $departmentId,
         string $currentNumber,
         string $nextNumber,
         int $waitingCount,
         ?string $completedTicket = null,
         ?string $skippedTicket = null
     ) {
+        $this->departmentId = $departmentId;
         $this->currentNumber   = $currentNumber;
         $this->nextNumber      = $nextNumber;
         $this->waitingCount    = $waitingCount;
@@ -34,7 +41,7 @@ class QueueUpdated implements ShouldBroadcastNow
 
     public function broadcastOn(): Channel
     {
-        return new Channel('queue');
+        return new Channel("queue.{$this->departmentId}");
     }
 
     public function broadcastAs(): string
@@ -44,22 +51,28 @@ class QueueUpdated implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        $waitingStudents = \App\Models\QueueEntry::where('status', 'waiting')
+        $waitingStudents = QueueEntry::where('department_id', $this->departmentId)
+            ->whereDate('queue_date', today())
+            ->where('status', 'waiting')
             ->orderBy('id', 'asc')
-            ->get(['id', 'ticket_number', 'name', 'purpose'])
-            ->map(fn($s, $i) => array_merge($s->toArray(), ['position' => $i + 1]))
+            ->get(['ticket_number'])
+            ->map(fn ($entry, $index) => [
+                'ticket_number' => $entry->ticket_number,
+                'position' => $index + 1,
+            ])
             ->values();
 
-        $currentServing = \App\Models\QueueEntry::where('status', 'serving')
-            ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number']);
+        $currentServing = QueueEntry::where('department_id', $this->departmentId)
+            ->whereDate('queue_date', today())
+            ->where('status', 'serving')
+            ->first(['ticket_number']);
 
-
-        $queuePaused  = \Illuminate\Support\Facades\DB::table('settings')
-            ->where('key', 'queue_paused')->value('value') === '1';
-
-        $avgServeMins = \App\Http\Controllers\StaffController::getAvgServeMinutes();
+        $department = Department::find($this->departmentId);
+        $avgServeMins = StaffController::getAvgServeMinutes($this->departmentId);
 
         return [
+            'department_id'    => $this->departmentId,
+            'department_name'  => $department?->name,
             'current'          => $this->currentNumber,
             'next'             => $this->nextNumber,
             'waiting_count'    => $this->waitingCount,
@@ -67,7 +80,8 @@ class QueueUpdated implements ShouldBroadcastNow
             'current_serving'  => $currentServing,
             'completed_ticket' => $this->completedTicket,
             'skipped_ticket'   => $this->skippedTicket,
-            'queue_paused'     => $queuePaused,
+            'queue_paused'     => (bool) $department?->queue_paused,
+            'pause_source'     => $department?->lunch_break_paused ? 'lunch' : 'manual',
             'avg_serve_mins'   => $avgServeMins,
         ];
     }

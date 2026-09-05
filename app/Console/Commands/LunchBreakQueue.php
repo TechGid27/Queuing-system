@@ -2,72 +2,82 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use App\Events\QueueUpdated;
+use App\Models\Department;
 use App\Models\QueueEntry;
+use Carbon\Carbon;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class LunchBreakQueue extends Command
 {
-    protected $signature   = 'queue:lunch-break';
-    protected $description = 'Automatically pause the queue at lunch break start and resume at lunch break end (times stored in settings table).';
+    protected $signature = 'queue:lunch-break';
+
+    protected $description = 'Automatically pause and resume active department queues at lunch';
 
     public function handle(): int
     {
-        // Load configurable times from settings (defaults: 12:00 – 13:30)
         $startTime = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
-        $endTime   = DB::table('settings')->where('key', 'lunch_break_end')->value('value')   ?? '13:30';
+        $endTime = DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30';
+        $now = now();
+        $todayStart = Carbon::createFromFormat('H:i', $startTime, $now->timezone)->setDateFrom($now);
+        $todayEnd = Carbon::createFromFormat('H:i', $endTime, $now->timezone)->setDateFrom($now);
 
-        $now          = now();
-        $todayStart   = \Carbon\Carbon::createFromFormat('H:i', $startTime, $now->timezone)->setDateFrom($now);
-        $todayEnd     = \Carbon\Carbon::createFromFormat('H:i', $endTime,   $now->timezone)->setDateFrom($now);
-        $currentPaused = DB::table('settings')->where('key', 'queue_paused')->value('value') === '1';
-
-        // ── Pause at lunch break start ────────────────────────────────────────
-        // Trigger once: when current minute matches start time and queue is NOT already paused.
-        if ($now->format('H:i') === $todayStart->format('H:i') && ! $currentPaused) {
+        if ($now->format('H:i') === $todayStart->format('H:i')) {
             $this->setPaused(true);
-            $this->info("Lunch break started at {$startTime}. Queue paused automatically.");
+            $this->info("Active department queues paused at {$startTime}.");
+
             return Command::SUCCESS;
         }
 
-        // ── Resume at lunch break end ─────────────────────────────────────────
-        // Trigger once: when current minute matches end time and queue IS paused.
-        if ($now->format('H:i') === $todayEnd->format('H:i') && $currentPaused) {
+        if ($now->format('H:i') === $todayEnd->format('H:i')) {
             $this->setPaused(false);
-            $this->info("Lunch break ended at {$endTime}. Queue resumed automatically.");
+            $this->info("Active department queues resumed at {$endTime}.");
+
             return Command::SUCCESS;
         }
 
-        $this->info('No lunch break action needed at ' . $now->format('H:i') . '.');
+        $this->info('No lunch break action needed at '.$now->format('H:i').'.');
+
         return Command::SUCCESS;
     }
 
-    // ─── Helper ───────────────────────────────────────────────────────────────
-
     private function setPaused(bool $paused): void
     {
-        DB::table('settings')
-            ->updateOrInsert(
-                ['key' => 'queue_paused'],
-                ['value' => $paused ? '1' : '0', 'updated_at' => now()]
-            );
+        $departments = Department::active()->get();
 
-        // Broadcast so all connected clients (student, TV, staff) update instantly
-        $serving = QueueEntry::where('status', 'serving')->first();
-        $current = $serving ? $serving->ticket_number : 'Waiting';
+        foreach ($departments as $department) {
+            if ($paused) {
+                if ($department->queue_paused) {
+                    continue;
+                }
+            } elseif (! $department->lunch_break_paused) {
+                continue;
+            }
 
-        if ($serving) {
-            Cache::forever('current_serving_number', $current);
-        } else {
-            Cache::forget('current_serving_number');
+            $department->update([
+                'queue_paused' => $paused,
+                'lunch_break_paused' => $paused,
+            ]);
+            $query = QueueEntry::where('department_id', $department->id)
+                ->whereDate('queue_date', today());
+            $serving = (clone $query)->where('status', 'serving')->first();
+            $next = (clone $query)->where('status', 'waiting')->orderBy('id')->first();
+            $waitingCount = (clone $query)->where('status', 'waiting')->count();
+
+            if ($serving) {
+                Cache::forever("current_serving_number_{$department->id}", $serving->ticket_number);
+            } else {
+                Cache::forget("current_serving_number_{$department->id}");
+            }
+
+            event(new QueueUpdated(
+                $department->id,
+                $serving?->ticket_number ?? 'Waiting',
+                $next?->ticket_number ?? 'Waiting',
+                $waitingCount
+            ));
         }
-
-        $nextPerson   = QueueEntry::where('status', 'waiting')->orderBy('id', 'asc')->first();
-        $next         = $nextPerson ? $nextPerson->ticket_number : 'Waiting';
-        $waitingCount = QueueEntry::where('status', 'waiting')->count();
-
-        event(new QueueUpdated($current, $next, $waitingCount));
     }
 }

@@ -10,7 +10,7 @@
                 <img src="/1973802-removebg-preview.png" alt="ACLC Logo" class="w-full h-full object-contain">
             </div>
             <h1 class="text-xl font-black text-slate-900">ACLC Queue System</h1>
-            <p class="text-sm text-slate-400 mt-1">Cashier's Office — Mandaue</p>
+            <p class="text-sm text-slate-400 mt-1">Login to your credentials Accounts</p>
         </div>
 
         {{-- Errors --}}

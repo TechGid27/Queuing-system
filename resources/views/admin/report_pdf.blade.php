@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>Queue Report - {{ $date }}</title>
     <style>
         body { font-family: sans-serif; font-size: 11px; }
@@ -19,7 +20,8 @@
 <body>
     <div class="header">
         <h1>ACLC College of Mandaue</h1>
-        <h3>Cashier's Office Queue Report</h3>
+        <h3>{{ $selectedDepartment?->name ?? 'Department' }} Queue Report</h3>
+        <p>Department: {{ $selectedDepartment?->name ?? 'N/A' }}</p>
         <p>Activity Date: {{ \Carbon\Carbon::parse($date)->format('F j, Y') }}</p>
     </div>
 
@@ -46,7 +48,7 @@
                 <td><strong>{{ $entry->ticket_number }}</strong></td>
                 <td>{{ $entry->name }}</td>
                 <td>{{ $entry->purpose }}</td>
-                <td class="{{ $entry->status }}">{{ ucfirst($entry->status) }}</td>
+                <td class="{{ $entry->status }}">{{ ucfirst(str_replace('_', ' ', $entry->status)) }}</td>
                 <td>{{ $entry->created_at->format('h:i A') }}</td>
                 <td>{{ $entry->served_at ? $entry->served_at->format('h:i A') : '--' }}</td>
                 <td>

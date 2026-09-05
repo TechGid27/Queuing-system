@@ -17,6 +17,8 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'department_id',
+        'is_active',
         'phone_number',
         'phone_verified_at',
     ];
@@ -44,7 +46,13 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at'  => 'datetime',
         'phone_verified_at'  => 'datetime',
+        'is_active' => 'boolean',
     ];
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }
 
     public function isPhoneVerified(): bool
     {

@@ -28,6 +28,9 @@
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
+        window.PUSHER_HOST        = "{{ config('broadcasting.connections.pusher.options.host', '') }}";
+        window.PUSHER_PORT        = "{{ config('broadcasting.connections.pusher.options.port', 443) }}";
+        window.PUSHER_SCHEME      = "{{ config('broadcasting.connections.pusher.options.scheme', 'https') }}";
     </script>
     <style>
         * { box-sizing: border-box; }
@@ -81,13 +84,23 @@
             <img src="/newAclcLogo-BQdiVkLw-removebg-preview.png" alt="ACLC Logo" class="w-12 h-12 object-contain shrink-0 rounded-full bg-white">
             <div>
                 <div class="text-white font-black text-xl tracking-tight leading-none">ACLC Mandaue</div>
-                <div class="text-slate-400 text-xs font-medium mt-0.5">Cashier's Office — Virtual Queue</div>
+                <div class="text-slate-400 text-xs font-medium mt-0.5">{{ $selectedDepartment?->name ?? 'Department' }} - Virtual Queue</div>
             </div>
         </div>
         <div class="flex items-center gap-6">
+            <label for="tv-department" class="sr-only">Department</label>
+            <select id="tv-department" onchange="window.location.href='{{ route('tv') }}?department_id=' + this.value"
+                class="bg-slate-800 border border-white/10 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none">
+                @foreach($departments as $department)
+                    <option value="{{ $department->id }}" @selected($selectedDepartment?->id === $department->id)>{{ $department->name }}</option>
+                @endforeach
+                @if($departments->isEmpty())
+                    <option value="" selected disabled>No active departments</option>
+                @endif
+            </select>
             <div class="flex items-center gap-2 bg-green-500/10 border border-green-500/30 px-4 py-1.5 rounded-full">
                 <span class="w-2 h-2 bg-green-400 rounded-full live-dot"></span>
-                <span class="text-green-400 text-xs font-bold tracking-widest">LIVE</span>
+                <span class="text-green-400 text-xs font-bold tracking-widest" id="tv-live-label">LIVE</span>
             </div>
             <div class="text-right">
                 <div class="text-white font-bold text-lg tabular-nums" id="tv-clock">--:--</div>
@@ -113,25 +126,6 @@
 
                 <div class="label-tag text-blue-300 mb-6">Now Serving</div>
                 <div class="ticket-now text-white text-center" id="tv-current">{{ $currentNumber }}</div>
-                @if($currentServing)
-                <div class="mt-6 text-center">
-                    <div class="text-blue-200 text-xl font-semibold " id="tv-current-name">{{ $currentServing->name }}
-
-                    </div>
-                    <div class="inline-flex items-center gap-2 mt-2 bg-white/10 px-4 py-1.5 rounded-full">
-                        <i class="bi bi-tag-fill text-blue-300 text-sm"></i>
-                        <span class="text-blue-100 text-sm font-medium" id="tv-current-purpose">{{ $currentServing->purpose }}</span>
-                    </div>
-                </div>
-                @else
-                <div class="mt-6 text-blue-300 text-lg font-medium" id="tv-current-name"></div>
-                <div class="mt-2 hidden" id="tv-current-purpose-wrap">
-                    <div class="inline-flex items-center gap-2 bg-white/10 px-4 py-1.5 rounded-full">
-                        <i class="bi bi-tag-fill text-blue-300 text-sm"></i>
-                        <span class="text-blue-100 text-sm font-medium" id="tv-current-purpose"></span>
-                    </div>
-                </div>
-                @endif
                 <div class="mt-8 flex items-center gap-2 bg-white/10 px-5 py-2 rounded-full">
                     <i class="bi bi-bell-fill text-yellow-300 text-sm"></i>
                     <span class="text-white/80 text-sm font-medium">Please proceed to the window</span>
@@ -168,7 +162,6 @@
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="text-white font-semibold text-sm truncate">{{ $entry->ticket_number }}</div>
-                        <div class="text-slate-400 text-xs truncate">{{ $entry->purpose }}</div>
                     </div>
                 </div>
                 @empty
@@ -183,9 +176,9 @@
             <div class="shrink-0 px-7 pb-5 border-t border-white/10" style="background: rgba(255,255,255,.03); padding-top: 3.56rem;">
                 <div class="label-tag text-slate-400 mb-1">Est. Wait Time</div>
                 <div class="text-2xl font-black text-blue-400" id="tv-est-wait">
-                    {{ $waitingCount > 0 ? '~' . ($waitingCount * 5) . ' min' : 'Waiting' }}
+                    {{ $queuePaused ? 'On Break' : ($waitingCount > 0 ? '~' . round($waitingCount * $avgServeTime) . ' min' : 'Ready') }}
                 </div>
-                <div class="text-slate-600 text-xs mt-0.5">avg. 3 min per student</div>
+                <div class="text-slate-600 text-xs mt-0.5" id="tv-avg-label">avg. {{ $avgServeTime }} min per ticket</div>
             </div>
         </div>
 
@@ -196,7 +189,7 @@
          style="background: #1e3a8a;">
         <div class="ticker-inner text-blue-200 text-sm font-medium px-4">
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-            🎓 Welcome to ACLC Mandaue Cashier's Office
+            Welcome to ACLC Mandaue - {{ $selectedDepartment?->name ?? 'Department' }}
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
             Please have your requirements ready before your number is called
             &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -232,6 +225,7 @@ function updateQueueList(waitingList) {
     const container = document.getElementById('tv-queue-list');
     if (!container) return;
 
+    container.replaceChildren();
     if (!waitingList || waitingList.length === 0) {
         container.innerHTML = `
             <div class="flex flex-col items-center justify-center h-full py-16 text-slate-600">
@@ -241,98 +235,107 @@ function updateQueueList(waitingList) {
         return;
     }
 
-    container.innerHTML = waitingList.slice(0, 8).map((entry, i) => `
-        <div class="queue-row flex items-center gap-4 px-7 py-4">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-                ${i === 0 ? 'bg-yellow-400 text-slate-900' : 'bg-white/10 text-slate-400'}">
-                ${i + 1}
-            </div>
-            <div class="min-w-0 flex-1">
-                <div class="text-white font-semibold text-sm truncate">${entry.ticket_number}</div>
-                <div class="text-slate-400 text-xs truncate">${entry.purpose || ''}</div>
-            </div>
-        </div>
-    `).join('');
+    waitingList.slice(0, 8).forEach((entry, index) => {
+        const row = document.createElement('div');
+        row.className = 'queue-row flex items-center gap-4 px-7 py-4';
+
+        const position = document.createElement('div');
+        position.className = `w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${index === 0 ? 'bg-yellow-400 text-slate-900' : 'bg-white/10 text-slate-400'}`;
+        position.textContent = String(entry.position ?? index + 1);
+
+        const ticket = document.createElement('div');
+        ticket.className = 'text-white font-semibold text-sm truncate';
+        ticket.textContent = String(entry.ticket_number ?? '');
+
+        const ticketWrap = document.createElement('div');
+        ticketWrap.className = 'min-w-0 flex-1';
+        ticketWrap.appendChild(ticket);
+        row.append(position, ticketWrap);
+        container.appendChild(row);
+    });
 }
 
-// ── Pusher real-time ───────────────────────────────────────────────────────
-if (window.PUSHER_APP_KEY) {
-    const pusher = new Pusher(window.PUSHER_APP_KEY, {
-        cluster: window.PUSHER_APP_CLUSTER || 'mt1',
-        forceTLS: true
-    });
+const departmentId = {{ $selectedDepartment?->id ?? 'null' }};
+function renderQueueState(data) {
+    const current = document.getElementById('tv-current');
+    const next = document.getElementById('tv-next');
+    const waiting = document.getElementById('tv-waiting');
+    const estimate = document.getElementById('tv-est-wait');
+    const averageLabel = document.getElementById('tv-avg-label');
+    const nowServing = document.getElementById('tv-now-serving-bg');
+    const breakBanner = document.getElementById('tv-break-banner');
 
-    // Connection state indicator
+    if (current && data.current !== undefined && current.innerText !== String(data.current)) {
+        current.innerText = data.current;
+        flashEl(current);
+    }
+    if (next && data.next !== undefined) next.innerText = data.next;
+    if (waiting && data.waiting_count !== undefined) waiting.innerText = data.waiting_count;
+    if (data.waiting_list) updateQueueList(data.waiting_list);
+
+    const paused = Boolean(data.queue_paused);
+    const average = Number(data.avg_serve_mins ?? {{ $avgServeTime }});
+    if (estimate && data.waiting_count !== undefined) {
+        estimate.innerText = paused
+            ? 'On Break'
+            : (data.waiting_count > 0 ? `~${Math.round(data.waiting_count * average)} min` : 'Ready');
+    }
+    if (averageLabel) averageLabel.innerText = `avg. ${average} min per ticket`;
+    if (nowServing) {
+        nowServing.style.background = paused
+            ? 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #b45309 100%)'
+            : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%)';
+    }
+    breakBanner?.classList.toggle('hidden', !paused);
+}
+
+async function refreshQueueState() {
+    if (!departmentId) return;
+    const statusUrl = new URL('{{ route("api.queueStatus") }}', window.location.origin);
+    statusUrl.searchParams.set('department_id', departmentId);
+
+    try {
+        const response = await fetch(statusUrl);
+        if (!response.ok) return;
+        renderQueueState(await response.json());
+    } catch (error) {
+        const dot = document.querySelector('.live-dot');
+        const label = document.getElementById('tv-live-label');
+        if (dot) dot.style.background = '#f87171';
+        if (label) label.innerText = 'RECONNECTING';
+    }
+}
+
+if (window.PUSHER_APP_KEY && departmentId) {
+    const options = {
+        cluster: window.PUSHER_APP_CLUSTER || 'mt1',
+        forceTLS: window.PUSHER_SCHEME === 'https',
+    };
+    if (window.PUSHER_HOST) {
+        options.wsHost = window.PUSHER_HOST;
+        options.wsPort = Number(window.PUSHER_PORT);
+        options.wssPort = Number(window.PUSHER_PORT);
+        options.enabledTransports = ['ws', 'wss'];
+    }
+
+    const pusher = new Pusher(window.PUSHER_APP_KEY, options);
     pusher.connection.bind('connected', () => {
         const dot = document.querySelector('.live-dot');
-        if (dot) { dot.style.background = '#4ade80'; }
+        const label = document.getElementById('tv-live-label');
+        if (dot) dot.style.background = '#4ade80';
+        if (label) label.innerText = 'LIVE';
     });
     pusher.connection.bind('disconnected', () => {
         const dot = document.querySelector('.live-dot');
-        if (dot) { dot.style.background = '#f87171'; }
+        const label = document.getElementById('tv-live-label');
+        if (dot) dot.style.background = '#facc15';
+        if (label) label.innerText = 'POLLING';
     });
-
-    pusher.subscribe('queue').bind('queue.updated', function(data) {
-        const currentEl   = document.getElementById('tv-current');
-        const nextEl      = document.getElementById('tv-next');
-        const waitEl      = document.getElementById('tv-waiting');
-        const estEl       = document.getElementById('tv-est-wait');
-        const nameEl      = document.getElementById('tv-current-name');
-        const purposeEl   = document.getElementById('tv-current-purpose');
-        const purposeWrap = document.getElementById('tv-current-purpose-wrap');
-        const nowServingBg = document.getElementById('tv-now-serving-bg');
-        const breakBanner  = document.getElementById('tv-break-banner');
-
-        if (currentEl && data.current && currentEl.innerText !== data.current) {
-            currentEl.innerText = data.current;
-            flashEl(currentEl);
-        }
-
-        if (nextEl && data.next) nextEl.innerText = data.next ?? 'Waiting';
-
-        if (waitEl && data.waiting_count !== undefined) waitEl.innerText = data.waiting_count;
-
-        if (estEl && data.avg_serve_mins !== undefined && data.waiting_count !== undefined) {
-            estEl.innerText = data.waiting_count > 0
-                ? '~' + Math.round(data.waiting_count * data.avg_serve_mins) + ' min'
-                : 'Waiting';
-        }
-
-        if (data.current_serving) {
-            if (nameEl) nameEl.innerText = data.current_serving.name || '';
-            if (purposeEl) purposeEl.innerText = data.current_serving.purpose || '';
-            if (purposeWrap) purposeWrap.classList.remove('hidden');
-        } else {
-            if (nameEl) nameEl.innerText = '';
-            if (purposeWrap) purposeWrap.classList.add('hidden');
-        }
-
-        if (data.waiting_list) updateQueueList(data.waiting_list);
-
-        // ── Pause/Resume real-time ──────────────────────────────────────
-        if (data.queue_paused !== undefined) {
-            const paused = data.queue_paused;
-            if (nowServingBg) {
-                nowServingBg.style.background = paused
-                    ? 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #b45309 100%)'
-                    : 'linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%)';
-            }
-            if (breakBanner) breakBanner.classList.toggle('hidden', !paused);
-        }
-    });
-} else {
-    // Fallback polling every 5s
-    setInterval(() => {
-        fetch('{{ route("api.queueStatus") }}')
-            .then(r => r.json())
-            .then(data => {
-                const c = document.getElementById('tv-current');
-                const n = document.getElementById('tv-next');
-                if (c && data.current) c.innerText = data.current;
-                if (n && data.next) n.innerText = data.next;
-            });
-    }, 5000);
+    pusher.subscribe(`queue.${departmentId}`).bind('queue.updated', renderQueueState);
 }
+
+refreshQueueState();
+setInterval(refreshQueueState, 5000);
 </script>
 </body>
 </html>

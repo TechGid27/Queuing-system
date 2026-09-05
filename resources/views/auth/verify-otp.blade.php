@@ -26,6 +26,7 @@
         <form action="{{ route('student.verify') }}" method="POST" class="space-y-4">
             @csrf
             <input type="hidden" name="phone" value="{{ $phone }}">
+            <input type="hidden" name="account_type" value="{{ $accountType }}">
             <div>
                 <label class="block text-xs font-semibold text-slate-600 text-center mb-2">Enter OTP Code</label>
                 <input type="text" name="otp" id="otp" required
@@ -43,6 +44,7 @@
             <form action="{{ route('student.resend.otp') }}" method="POST">
                 @csrf
                 <input type="hidden" name="phone" value="{{ $phone }}">
+                <input type="hidden" name="account_type" value="{{ $accountType }}">
                 @error('phone')
                     <div class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl mb-3">
                         <i class="bi bi-x-circle-fill mt-0.5 shrink-0"></i> {{ $message }}
@@ -56,7 +58,7 @@
         </div>
 
         <div class="text-center mt-4">
-            <a href="{{ route('register') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+            <a href="{{ $accountType === 'guest' ? route('register') : route('private_register') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
                 ← Back to Registration
             </a>
         </div>

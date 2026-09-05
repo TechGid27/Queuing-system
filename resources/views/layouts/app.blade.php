@@ -35,14 +35,25 @@
         window.PUSHER_PORT        = "{{ config('broadcasting.connections.pusher.options.port', 443) }}";
         window.PUSHER_SCHEME      = "{{ config('broadcasting.connections.pusher.options.scheme', 'https') }}";
         
-        // Initialize Laravel Echo with Pusher
-        window.Pusher = Pusher;
-        window.Echo = new Echo({
-            broadcaster: 'pusher',
-            key: window.PUSHER_APP_KEY,
-            cluster: window.PUSHER_APP_CLUSTER,
-            forceTLS: window.PUSHER_SCHEME === 'https',
-        });
+        const EchoClient = window.Echo;
+        window.Echo = null;
+        if (window.Pusher && EchoClient && window.PUSHER_APP_KEY) {
+            const echoOptions = {
+                broadcaster: 'pusher',
+                key: window.PUSHER_APP_KEY,
+                cluster: window.PUSHER_APP_CLUSTER,
+                forceTLS: window.PUSHER_SCHEME === 'https',
+            };
+
+            if (window.PUSHER_HOST) {
+                echoOptions.wsHost = window.PUSHER_HOST;
+                echoOptions.wsPort = Number(window.PUSHER_PORT);
+                echoOptions.wssPort = Number(window.PUSHER_PORT);
+                echoOptions.enabledTransports = ['ws', 'wss'];
+            }
+
+            window.Echo = new EchoClient(echoOptions);
+        }
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -59,6 +70,13 @@
 
 @auth
 {{-- ── Authenticated Layout (with sidebar) ── --}}
+@php
+    $currentAccount = auth()->user();
+    $accountName = $currentAccount->name ?: ($currentAccount->student_id ?: 'Guest');
+    $departmentRouteParams = request()->filled('department_id')
+        ? ['department_id' => request()->integer('department_id')]
+        : [];
+@endphp
 
 {{-- Mobile overlay --}}
 <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 hidden lg:hidden" onclick="toggleSidebar()"></div>
@@ -71,7 +89,7 @@
             <img src="/newAclcLogo-BQdiVkLw-removebg-preview.png" alt="ACLC Logo" class="w-8 h-8 object-contain shrink-0">
             <div>
                 <div class="text-white font-bold text-sm tracking-tight">ACLC Mandaue</div>
-                <div class="text-slate-400 text-xs mt-0.5">Cashier's Office</div>
+                <div class="text-slate-400 text-xs mt-0.5">Department Queues</div>
             </div>
         </div>
         <span class="inline-block mt-2 bg-primary text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Queue System</span>
@@ -79,26 +97,35 @@
 
     {{-- Nav --}}
     <nav class="flex-1 px-3 py-4 overflow-y-auto">
-        @if(auth()->user()->role === 'staff')
+        @if(auth()->user()->role === 'staff' || auth()->user()->role === 'admin')
             <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2">Management</div>
-            <a href="{{ route('admin.index') }}"
+            <a href="{{ route('admin.index', $departmentRouteParams) }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                       {{ request()->routeIs('admin.index') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                 <i class="bi bi-speedometer2 w-4 text-center"></i> Dashboard
             </a>
-            <a href="{{ route('admin.purposes.index') }}"
-               class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
-                      {{ request()->routeIs('admin.purposes.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
-                <i class="bi bi-tags w-4 text-center"></i> Purposes
-            </a>
-            <a href="{{ route('admin.reports') }}"
+            @if(auth()->user()->role === 'admin')
+                <a href="{{ route('admin.purposes.index') }}"
+                   class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                          {{ request()->routeIs('admin.purposes.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                    <i class="bi bi-tags w-4 text-center"></i> Purposes
+                </a>
+            @endif
+            <a href="{{ route('admin.reports', $departmentRouteParams) }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                       {{ request()->routeIs('admin.reports') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                 <i class="bi bi-bar-chart-line w-4 text-center"></i> Reports
             </a>
+            @if(auth()->user()->role === 'admin')
+            <a href="{{ route('admin.departments.index') }}"
+               class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                      {{ request()->routeIs('admin.departments.*', 'admin.staff.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-building w-4 text-center"></i> Departments & Staff
+            </a>
+            @endif
         @else
             <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2">Student</div>
-            <a href="{{ route('student.index') }}"
+            <a href="{{ route('student.index', $departmentRouteParams) }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                       {{ request()->routeIs('student.index') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                 <i class="bi bi-ticket-perforated w-4 text-center"></i> My Queue
@@ -110,10 +137,10 @@
     <div class="px-3 py-4 border-t border-white/5">
         <div class="flex items-center gap-2.5 px-2 py-2 mb-2">
             <div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                {{ strtoupper(substr(auth()->user()->name, 0, 1)) }}
+                {{ strtoupper(substr($accountName, 0, 1)) }}
             </div>
             <div class="min-w-0">
-                <div class="text-slate-200 text-xs font-semibold truncate">{{ auth()->user()->name }}</div>
+                <div class="text-slate-200 text-xs font-semibold truncate">{{ $accountName }}</div>
                 <div class="text-slate-500 text-[11px]">{{ ucfirst(auth()->user()->role) }}</div>
             </div>
         </div>
@@ -132,7 +159,7 @@
     <header class="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 lg:px-7 h-14 flex items-center justify-between">
         <div class="flex items-center gap-3">
             {{-- Mobile hamburger --}}
-            <button onclick="toggleSidebar()" class="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100">
+            <button type="button" onclick="toggleSidebar()" aria-label="Toggle navigation" class="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100">
                 <i class="bi bi-list text-xl"></i>
             </button>
             <span class="text-sm font-semibold text-slate-800">@yield('page-title', 'Dashboard')</span>
@@ -208,7 +235,11 @@
         const icons  = { success: 'check-circle', warning: 'exclamation-circle' };
         const el = document.createElement('div');
         el.className = `pointer-events-auto flex items-center gap-3 ${colors[type] || colors.success} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl max-w-xs`;
-        el.innerHTML = `<i class="bi bi-${icons[type] || 'check-circle'}"></i><span>${message}</span>`;
+        const icon = document.createElement('i');
+        icon.className = `bi bi-${icons[type] || 'check-circle'}`;
+        const text = document.createElement('span');
+        text.textContent = String(message);
+        el.append(icon, text);
         el.style.animation = 'slideIn .25s ease';
         wrap.appendChild(el);
         setTimeout(() => el.remove(), 4500);
