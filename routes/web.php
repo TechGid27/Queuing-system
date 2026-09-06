@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AdminOverviewController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\PurposeController;
 use App\Http\Controllers\QueueController;
@@ -51,6 +52,7 @@ Route::middleware(['auth:student', 'is_student'])->group(function () {
 // ─── Staff Portal (auth required) ────────────────────────────────────────────
 Route::middleware(['auth:web', 'is_staff'])->group(function () {
     Route::get('/admin', [StaffController::class, 'index'])->name('admin.index');
+    Route::get('/admin/queue', [StaffController::class, 'index'])->name('admin.queue');
     Route::post('/admin/call-next', [StaffController::class, 'callNext'])->name('admin.callNext');
     Route::post('/admin/reject/{id}', [StaffController::class, 'reject'])->name('admin.reject');
     Route::post('/admin/accept/{id}', [StaffController::class, 'complete'])->name('admin.complete');
@@ -64,6 +66,9 @@ Route::middleware(['auth:web', 'is_staff'])->group(function () {
 
 // ─── Administrator-only management ───────────────────────────────────────────
 Route::middleware(['auth:web', 'is_admin'])->group(function () {
+    Route::get('/admin/overview', [AdminOverviewController::class, 'index'])->name('admin.overview');
+    Route::get('/admin/overview/status', [AdminOverviewController::class, 'status'])->name('admin.overview.status');
+    Route::get('/admin/audit-log', [AdminOverviewController::class, 'auditLog'])->name('admin.audit');
     Route::get('/admin/departments', [DepartmentController::class, 'index'])->name('admin.departments.index');
     Route::post('/admin/departments', [DepartmentController::class, 'store'])->name('admin.departments.store');
     Route::patch('/admin/departments/{department}/status', [DepartmentController::class, 'updateStatus'])->name('admin.departments.status');

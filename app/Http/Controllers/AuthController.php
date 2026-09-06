@@ -136,6 +136,16 @@ class AuthController extends Controller
             'department_id' => 'nullable|integer|exists:departments,id',
         ]);
 
+        $registrationKey = 'guest-register:'.$request->phone_number.':'.$request->ip();
+        if (RateLimiter::tooManyAttempts($registrationKey, 3)) {
+            $seconds = RateLimiter::availableIn($registrationKey);
+
+            return back()->withErrors([
+                'phone_number' => "Too many verification requests. Try again in {$seconds} seconds.",
+            ])->withInput();
+        }
+        RateLimiter::hit($registrationKey, 120);
+
         if ($request->integer('department_id')) {
             $department = Department::active()->find($request->integer('department_id'));
             if (! $department) {
@@ -396,16 +406,31 @@ class AuthController extends Controller
             'otp' => 'required|digits:6',
         ]);
 
+        $attemptKey = 'reset-otp-verify:'.$request->phone.':'.$request->ip();
+        if (RateLimiter::tooManyAttempts($attemptKey, 5)) {
+            $seconds = RateLimiter::availableIn($attemptKey);
+
+            return back()->withErrors(['otp' => "Too many verification attempts. Try again in {$seconds} seconds."]);
+        }
+
+        $user = User::where('phone_number', $request->phone)
+            ->whereNotNull('phone_verified_at')
+            ->first();
+
         $record = PhoneOtp::where('phone_number', $request->phone)
             ->where('purpose', self::OTP_PASSWORD_RESET)
             ->orderBy('id', 'desc')
             ->first();
 
-        if (! $record || $record->otp !== $request->otp) {
+        if (! $user || ! $record || $record->otp !== $request->otp) {
+            RateLimiter::hit($attemptKey, 600);
+
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
         }
 
         if ($record->isExpired()) {
+            RateLimiter::hit($attemptKey, 600);
+
             return back()->withErrors(['otp' => 'OTP has expired. Please request a new one.']);
         }
 
@@ -414,6 +439,7 @@ class AuthController extends Controller
         PhoneOtp::where('phone_number', $request->phone)
             ->where('purpose', self::OTP_PASSWORD_RESET)
             ->delete();
+        RateLimiter::clear($attemptKey);
 
         return redirect()->route('password.reset.show');
     }

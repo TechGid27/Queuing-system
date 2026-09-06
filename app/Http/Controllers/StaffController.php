@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\QueueUpdated;
 use App\Models\Department;
 use App\Models\QueueEntry;
+use App\Services\QueueTransitionService;
 use App\Services\SmsService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -15,10 +16,12 @@ use Illuminate\Support\Facades\DB;
 class StaffController extends Controller
 {
     private SmsService $sms;
+    private QueueTransitionService $transitions;
 
-    public function __construct(SmsService $sms)
+    public function __construct(SmsService $sms, QueueTransitionService $transitions)
     {
         $this->sms = $sms;
+        $this->transitions = $transitions;
     }
 
     private function resolveDepartment(Request $request): ?Department
@@ -72,6 +75,7 @@ class StaffController extends Controller
         $user = Auth::guard('web')->user();
         abort_unless($user && $user->is_active, 403);
         abort_unless($entry->queue_date?->isToday(), 404);
+        abort_unless($entry->department?->is_active, 403);
 
         if ($user->role === 'staff') {
             abort_unless((int) $user->department_id === (int) $entry->department_id, 403);
@@ -166,10 +170,20 @@ class StaffController extends Controller
             default => ! $department->queue_paused,
         };
 
-        $department->update([
-            'queue_paused' => $isPaused,
-            'lunch_break_paused' => false,
-        ]);
+        try {
+            $department = $this->transitions->setPaused(
+                $department,
+                $isPaused,
+                Auth::guard('web')->user(),
+                'manual'
+            );
+        } catch (\LogicException $exception) {
+            $message = $exception->getMessage();
+
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->with('warning', $message);
+        }
         $this->broadcastQueueState($department->id);
 
         $message = $isPaused
@@ -201,52 +215,17 @@ class StaffController extends Controller
             return back()->with('warning', 'Resume this department queue before calling the next student.');
         }
 
-        if (! Cache::add("call_next_lock_{$department->id}", true, 3)) {
-            return back()->with('warning', 'Please wait before calling the next student.');
+        if ($this->todayQueue($department)->where('status', 'serving')->exists()) {
+            return back()->with('warning', 'Complete or skip the current ticket before calling the next student.');
         }
 
-        [$nextStudent, $completedStudent] = DB::transaction(function () use ($department) {
-            $serving = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
-                ->where('status', 'serving')
-                ->lockForUpdate()
-                ->first();
-
-            $next = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
-                ->where('status', 'waiting')
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->first();
-
-            if (! $next) {
-                return [null, null];
-            }
-
-            if ($serving) {
-                $serving->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                ]);
-            }
-
-            $next->update([
-                'status' => 'serving',
-                'served_at' => now(),
-            ]);
-
-            return [$next, $serving];
-        });
-
-        if (! $nextStudent) {
-            return back()->with('warning', 'No students waiting in this department.');
+        try {
+            $nextStudent = $this->transitions->callNext($department, Auth::guard('web')->user());
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
 
         Cache::forever($this->currentCacheKey($department->id), $nextStudent->ticket_number);
-
-        if ($completedStudent?->phone_number) {
-            $this->sms->sendCompletedNotification($completedStudent->phone_number, $completedStudent->ticket_number);
-        }
 
         if ($nextStudent->phone_number) {
             $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
@@ -261,7 +240,7 @@ class StaffController extends Controller
             $this->sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
         }
 
-        $this->broadcastQueueState($department->id, $completedStudent?->ticket_number);
+        $this->broadcastQueueState($department->id);
 
         return back()->with('success', "Now serving {$nextStudent->ticket_number} in {$department->name}.");
     }
@@ -271,14 +250,11 @@ class StaffController extends Controller
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 
-        if ($student->status !== 'serving') {
-            return back()->with('warning', 'Only the currently serving ticket can be completed.');
+        try {
+            $student = $this->transitions->complete($student, Auth::guard('web')->user());
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
-
-        $student->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-        ]);
 
         if ($student->phone_number) {
             $this->sms->sendCompletedNotification($student->phone_number, $student->ticket_number);
@@ -295,14 +271,11 @@ class StaffController extends Controller
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 
-        if ($student->status !== 'serving') {
-            return back()->with('warning', 'Only the currently serving ticket can be skipped.');
+        try {
+            $student = $this->transitions->skip($student, Auth::guard('web')->user());
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
-
-        $student->update([
-            'status' => 'no_response',
-            'completed_at' => now(),
-        ]);
 
         if ($student->phone_number) {
             $this->sms->sendSkippedNotification($student->phone_number, $student->ticket_number);

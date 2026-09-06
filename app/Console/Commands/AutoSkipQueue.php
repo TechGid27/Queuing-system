@@ -5,10 +5,10 @@ namespace App\Console\Commands;
 use App\Events\QueueUpdated;
 use App\Models\Department;
 use App\Models\QueueEntry;
+use App\Services\QueueTransitionService;
 use App\Services\SmsService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class AutoSkipQueue extends Command
 {
@@ -16,50 +16,12 @@ class AutoSkipQueue extends Command
 
     protected $description = 'Automatically skip unresponsive students after three minutes';
 
-    public function handle(SmsService $sms): int
+    public function handle(SmsService $sms, QueueTransitionService $transitions): int
     {
         $departments = Department::active()->where('queue_paused', false)->get();
 
         foreach ($departments as $department) {
-            [$skipped, $nextStudent] = DB::transaction(function () use ($department) {
-                $serving = QueueEntry::where('department_id', $department->id)
-                    ->whereDate('queue_date', today())
-                    ->where('status', 'serving')
-                    ->where(function ($query) {
-                        $query->where('served_at', '<', now()->subMinutes(3))
-                            ->orWhere(function ($fallback) {
-                                $fallback->whereNull('served_at')
-                                    ->where('updated_at', '<', now()->subMinutes(3));
-                            });
-                    })
-                    ->lockForUpdate()
-                    ->first();
-
-                if (! $serving) {
-                    return [null, null];
-                }
-
-                $serving->update([
-                    'status' => 'no_response',
-                    'completed_at' => now(),
-                ]);
-
-                $next = QueueEntry::where('department_id', $department->id)
-                    ->whereDate('queue_date', today())
-                    ->where('status', 'waiting')
-                    ->orderBy('id')
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($next) {
-                    $next->update([
-                        'status' => 'serving',
-                        'served_at' => now(),
-                    ]);
-                }
-
-                return [$serving, $next];
-            });
+            [$skipped, $nextStudent] = $transitions->autoSkip($department) ?? [null, null];
 
             if (! $skipped) {
                 continue;

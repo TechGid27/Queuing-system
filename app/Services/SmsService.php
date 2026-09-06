@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\SmsNotification;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Throwable;
 
 class SmsService
 {
@@ -26,7 +29,7 @@ class SmsService
     public function sendOtp(string $phone, string $otp): void
     {
         $message = "Your ACLC Queue System verification code is: {$otp}. Valid for 10 minutes. Do not share this code.";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'otp');
     }
 
     /**
@@ -35,7 +38,7 @@ class SmsService
     public function sendPasswordResetOtp(string $phone, string $otp): void
     {
         $message = "ACLC Queue System: Your password reset code is: {$otp}. Valid for 10 minutes. Do not share this code.";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'password_reset');
     }
 
     /**
@@ -44,7 +47,7 @@ class SmsService
     public function sendNowServingNotification(string $phone, string $ticketNumber): void
     {
         $message = "ACLC Cashier: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'now_serving');
     }
 
     /**
@@ -53,7 +56,7 @@ class SmsService
     public function sendAlmostYourTurnNotification(string $phone, string $ticketNumber): void
     {
         $message = "ACLC Cashier: Ticket {$ticketNumber} - You're next in line! Please prepare your requirements and stay nearby.";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'almost_turn');
     }
 
     /**
@@ -62,7 +65,7 @@ class SmsService
     public function sendCompletedNotification(string $phone, string $ticketNumber): void
     {
         $message = "ACLC Cashier: Ticket {$ticketNumber} - Your transaction has been completed. Thank you!";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'completed');
     }
 
     /**
@@ -71,18 +74,26 @@ class SmsService
     public function sendSkippedNotification(string $phone, string $ticketNumber): void
     {
         $message = "ACLC Cashier: Ticket {$ticketNumber} - You were skipped due to no response. Please visit the Cashier's office to re-queue.";
-        $this->send($phone, $message);
+        $this->send($phone, $message, 'skipped');
     }
 
     // ─── Core Send ────────────────────────────────────────────────────────────
 
-    public function send(string $phone, string $message): void
+    public function send(string $phone, string $message, string $type = 'notification'): void
     {
         // Convert PH local format 09XXXXXXXXX → E.164 +639XXXXXXXXX
         $e164 = preg_replace('/^0/', '+63', $phone);
+        $delivery = $this->createDelivery($e164, $type);
 
         if (! $this->apiKey || ! $this->deviceId) {
-            Log::info("[SmsService] SMS to {$e164}: {$message}");
+            $delivery?->update([
+                'status' => 'fallback',
+                'sent_at' => now(),
+            ]);
+            Log::info('[SmsService] SMS recorded using fallback mode.', [
+                'to' => $e164,
+                'type' => $type,
+            ]);
             return;
         }
 
@@ -99,8 +110,38 @@ class SmsService
                     ],
                 ]
             );
+            $delivery?->update([
+                'status' => 'sent',
+                'sent_at' => now(),
+            ]);
         } catch (\Exception $e) {
-            Log::error("[SmsService] Failed to send SMS to {$e164}: " . $e->getMessage());
+            $delivery?->update([
+                'status' => 'failed',
+                'error' => Str::limit($e->getMessage(), 1000),
+            ]);
+            Log::error('[SmsService] Failed to send SMS.', [
+                'to' => $e164,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function createDelivery(string $phone, string $type): ?SmsNotification
+    {
+        try {
+            return SmsNotification::create([
+                'phone_number' => $phone,
+                'type' => $type,
+                'status' => 'pending',
+            ]);
+        } catch (Throwable $exception) {
+            Log::warning('[SmsService] Unable to record SMS delivery.', [
+                'type' => $type,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
         }
     }
 }

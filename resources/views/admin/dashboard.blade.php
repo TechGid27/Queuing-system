@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('page-title', 'Dashboard')
+@section('page-title', 'Queue Console')
 
 @section('content')
 @php
@@ -140,7 +140,7 @@
                 <form action="{{ route('admin.callNext') }}" method="POST">
                     @csrf
                     <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
+                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="{{ $currentServing ? '1' : '0' }}" {{ $waitingCount == 0 || $currentServing || !$queueOperational || $queuePaused ? 'disabled' : '' }}
                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-arrow-right-circle-fill"></i> Call Next
                     </button>
@@ -153,7 +153,7 @@
                 <form action="{{ route('admin.callNext') }}" method="POST" class="mt-6 inline-block">
                     @csrf
                     <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
+                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="0" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                         <i class="bi bi-play-circle-fill"></i> Call First Student
                     </button>
@@ -331,7 +331,7 @@
             button.disabled = !QUEUE_OPERATIONAL;
         });
         document.querySelectorAll('[data-queue-running]').forEach(button => {
-            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1';
+            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1' || button.dataset.current === '1';
         });
     }
 

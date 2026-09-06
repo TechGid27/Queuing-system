@@ -109,7 +109,7 @@ class QueueController extends Controller
         $guest = Auth::guard('student')->user();
 
         if ($user && in_array($user->role, ['admin', 'staff'], true)) {
-            return redirect()->route('admin.index');
+            return redirect()->route($user->role === 'admin' ? 'admin.overview' : 'admin.queue');
         }
 
         $myTicket = null;

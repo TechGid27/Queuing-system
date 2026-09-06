@@ -54,7 +54,7 @@
                         const rejectUrl = escapeHtml(queueActionUrl(REJECT_URL_TEMPLATE, s.id));
                         const completeUrl = escapeHtml(queueActionUrl(COMPLETE_URL_TEMPLATE, s.id));
                         const actionsDisabled = !data.department_active ? 'disabled' : '';
-                        const callNextDisabled = !data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : '';
+                         const callNextDisabled = !data.department_active || data.queue_paused || data.waiting_count === 0 || data.current ? 'disabled' : '';
                         nowServingEl.innerHTML = `
                             <div class="text-center py-4">
                                 <div class="ticket-xl text-primary mb-3">${ticketNumber}</div>
@@ -89,7 +89,7 @@
                                 <form action="${CALL_NEXT_URL}" method="POST">
                                     <input type="hidden" name="_token" value="{{ csrf_token() }}">
                                     <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                    <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" ${callNextDisabled}
+                                    <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="${data.current ? '1' : '0'}" ${callNextDisabled}
                                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                         <i class="bi bi-arrow-right-circle-fill"></i> Call Next
                                     </button>
@@ -105,7 +105,7 @@
                                 <form action="${CALL_NEXT_URL}" method="POST" class="mt-6 inline-block">
                                     <input type="hidden" name="_token" value="{{ csrf_token() }}">
                                     <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                    <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
+                                         <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
                                         class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                         <i class="bi bi-play-circle-fill"></i> Call First Student
                                     </button>
