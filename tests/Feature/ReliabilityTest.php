@@ -85,6 +85,7 @@ class ReliabilityTest extends TestCase
     {
         Event::fake([QueueUpdated::class]);
         $department = Department::where('name', 'Cashier')->firstOrFail();
+        $department->update(['auto_pause_enabled' => false]);
         $staff = $this->createStaff($department);
 
         $this->actingAs($staff, 'web')

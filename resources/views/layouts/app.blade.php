@@ -105,30 +105,21 @@
                       {{ request()->routeIs('admin.overview', 'admin.queue', 'admin.index') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                 <i class="bi bi-speedometer2 w-4 text-center"></i> {{ auth()->user()->role === 'admin' ? 'Overview' : 'Queue Console' }}
             </a>
-            @if(auth()->user()->role === 'admin')
+            {{-- @if(auth()->user()->role === 'admin')
                 <a href="{{ route('admin.queue', $departmentRouteParams) }}"
                    class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                           {{ request()->routeIs('admin.queue', 'admin.index') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                     <i class="bi bi-display w-4 text-center"></i> Queue Console
                 </a>
-            @endif
+            @endif --}}
             @if(auth()->user()->role === 'admin')
                 <a href="{{ route('admin.purposes.index') }}"
                    class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                           {{ request()->routeIs('admin.purposes.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
                     <i class="bi bi-tags w-4 text-center"></i> Purposes
                 </a>
-                <a href="{{ route('admin.audit') }}"
-                   class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
-                          {{ request()->routeIs('admin.audit') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
-                    <i class="bi bi-clock-history w-4 text-center"></i> Audit Log
-                </a>
             @endif
-            <a href="{{ route('admin.reports', $departmentRouteParams) }}"
-               class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
-                      {{ request()->routeIs('admin.reports') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
-                <i class="bi bi-bar-chart-line w-4 text-center"></i> Reports
-            </a>
+          
             @if(auth()->user()->role === 'admin')
             <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-5">Staff Management</div>
             <hr class="mb-5">
@@ -140,6 +131,20 @@
             @endif
             <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-5">Analytics</div>
             <hr class="mb-5">
+           @if(auth()->user()->role !== 'admin')
+            <a href="{{ route('admin.reports', $departmentRouteParams) }}"
+               class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                      {{ request()->routeIs('admin.reports') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-bar-chart-line w-4 text-center"></i> Reports
+            </a>
+           @endif
+            @if(auth()->user()->role === 'admin')
+            <a href="{{ route('admin.audit') }}"
+                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                        {{ request()->routeIs('admin.audit') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-clock-history w-4 text-center"></i> Audit Log
+            </a>
+            @endif
         @else
             <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2">Student</div>
             <a href="{{ route('student.index', $departmentRouteParams) }}"

@@ -62,6 +62,20 @@ class QueueUpdated implements ShouldBroadcastNow
             ])
             ->values();
 
+        $currentServings = QueueEntry::where('department_id', $this->departmentId)
+            ->whereDate('queue_date', today())
+            ->where('status', 'serving')
+            ->with(['counter', 'servedBy'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($s) => [
+                'id' => $s->id,
+                'ticket_number' => $s->ticket_number,
+                'counter_id' => $s->counter_id,
+                'counter_name' => $s->counter?->name,
+                'served_by_name' => $s->servedBy?->name,
+            ])
+            ->values();
         $currentServing = QueueEntry::where('department_id', $this->departmentId)
             ->whereDate('queue_date', today())
             ->where('status', 'serving')
@@ -78,6 +92,8 @@ class QueueUpdated implements ShouldBroadcastNow
             'waiting_count'    => $this->waitingCount,
             'waiting_list'     => $waitingStudents,
             'current_serving'  => $currentServing,
+            'current_servings' => $currentServings,
+            'serving_count'    => $currentServings->count(),
             'completed_ticket' => $this->completedTicket,
             'skipped_ticket'   => $this->skippedTicket,
             'queue_paused'     => (bool) $department?->queue_paused,

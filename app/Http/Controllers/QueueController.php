@@ -52,8 +52,13 @@ class QueueController extends Controller
         $baseQuery = QueueEntry::where('department_id', $department->id)
             ->whereDate('queue_date', today());
 
-        $currentServing = (clone $baseQuery)->where('status', 'serving')->first();
+        $currentServing = (clone $baseQuery)->where('status', 'serving')->orderBy('id')->first();
         $currentNumber = $currentServing?->ticket_number ?? '--';
+        $currentServings = (clone $baseQuery)
+            ->where('status', 'serving')
+            ->with(['counter', 'servedBy'])
+            ->orderBy('id')
+            ->get();
 
         if ($currentServing) {
             Cache::forever($this->currentCacheKey($department->id), $currentNumber);
@@ -68,6 +73,8 @@ class QueueController extends Controller
         return [
             'currentNumber' => $currentNumber,
             'currentServing' => $currentServing,
+            'currentServings' => $currentServings,
+            'servingCount' => $currentServings->count(),
             'nextNumber' => $nextPerson?->ticket_number ?? 'Waiting',
             'waitingCount' => (clone $baseQuery)->where('status', 'waiting')->count(),
             'waitingList' => (clone $baseQuery)->where('status', 'waiting')->orderBy('id')->take(8)->get(),
@@ -98,7 +105,7 @@ class QueueController extends Controller
         $queuePaused = (bool) $selectedDepartment?->queue_paused;
         $avgServeTime = StaffController::getAvgServeMinutes($selectedDepartment?->id);
 
-        return view('tv', compact('currentNumber', 'currentServing', 'nextNumber', 'waitingCount', 'waitingList', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
+        return view('tv', compact('currentNumber', 'currentServing', 'currentServings', 'servingCount', 'nextNumber', 'waitingCount', 'waitingList', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
     }
 
     // ─── Index (Public + Student View) ────────────────────────────────────────
@@ -209,6 +216,11 @@ class QueueController extends Controller
             'current_serving' => $state['currentServing'] ? [
                 'ticket_number' => $state['currentServing']->ticket_number,
             ] : null,
+            'current_servings' => $state['currentServings']->map(fn ($s) => [
+                'ticket_number' => $s->ticket_number,
+                'counter_name' => $s->counter?->name,
+            ])->values(),
+            'serving_count' => $state['servingCount'],
             'my_ticket' => $myTicket,
             'queue_paused' => (bool) $selectedDepartment?->queue_paused,
             'avg_serve_mins' => \App\Http\Controllers\StaffController::getAvgServeMinutes($selectedDepartment?->id),

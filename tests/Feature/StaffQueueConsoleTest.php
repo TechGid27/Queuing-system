@@ -27,9 +27,10 @@ class StaffQueueConsoleTest extends TestCase
             ->get(route('admin.queue'))
             ->assertOk()
             ->assertSee('Queue Console')
-            ->assertSee('Skip / No Show')
-            ->assertSee('Complete')
-            ->assertSee('data-current="1"', false);
+            ->assertSee('Window 1')
+            ->assertSee('001')
+            ->assertSee('Skip')
+            ->assertSee('Complete');
     }
 
     public function test_call_next_requires_staff_to_finish_current_ticket_first(): void
@@ -67,6 +68,62 @@ class StaffQueueConsoleTest extends TestCase
             'id' => $waiting->id,
             'status' => 'serving',
         ]);
+    }
+
+    public function test_multiple_counters_serve_concurrently(): void
+    {
+        Event::fake([QueueUpdated::class]);
+        $department = Department::create(['name' => 'Admission']);
+        foreach (['Window 1', 'Window 2', 'Window 3', 'Window 4'] as $name) {
+            $department->counters()->create(['name' => $name]);
+        }
+        $staffA = User::create([
+            'department_id' => $department->id,
+            'name' => 'Staff A',
+            'email' => 'staff-a@example.com',
+            'phone_number' => '09170000101',
+            'phone_verified_at' => now(),
+            'password' => Hash::make('password123'),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+        $staffB = User::create([
+            'department_id' => $department->id,
+            'name' => 'Staff B',
+            'email' => 'staff-b@example.com',
+            'phone_number' => '09170000102',
+            'phone_verified_at' => now(),
+            'password' => Hash::make('password123'),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+        foreach (['001', '002', '003', '004', '005'] as $ticket) {
+            $this->createEntry($department, $ticket, 'waiting');
+        }
+        $this->mock(SmsService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('sendNowServingNotification')->twice();
+            $mock->shouldReceive('sendAlmostYourTurnNotification')->twice();
+        });
+
+        $this->actingAs($staffA, 'web')
+            ->post(route('admin.callNext'), ['department_id' => $department->id])
+            ->assertSessionHasNoErrors();
+        $this->actingAs($staffB, 'web')
+            ->post(route('admin.callNext'), ['department_id' => $department->id])
+            ->assertSessionHasNoErrors();
+
+        $servings = QueueEntry::where('department_id', $department->id)
+            ->where('status', 'serving')
+            ->get();
+
+        $this->assertCount(2, $servings);
+        $this->assertNotEquals($servings[0]->counter_id, $servings[1]->counter_id);
+        $this->assertNotEquals($servings[0]->served_by, $servings[1]->served_by);
+
+        // Same staff cannot occupy a second counter while serving.
+        $this->actingAs($staffA, 'web')
+            ->post(route('admin.callNext'), ['department_id' => $department->id])
+            ->assertSessionHas('warning');
     }
 
     private function createStaff(Department $department): User

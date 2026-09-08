@@ -21,22 +21,41 @@ class AutoSkipQueue extends Command
         $departments = Department::active()->where('queue_paused', false)->get();
 
         foreach ($departments as $department) {
-            [$skipped, $nextStudent] = $transitions->autoSkip($department) ?? [null, null];
+            $result = $transitions->autoSkip($department);
 
-            if (! $skipped) {
+            if (! $result) {
                 continue;
             }
 
-            if ($skipped->phone_number) {
-                $sms->sendSkippedNotification($skipped->phone_number, $skipped->ticket_number);
+            // New multi-counter shape: ['skipped' => [...], 'called' => [...]].
+            // Keep backward compat with legacy [$skipped, $next] tuple.
+            if (isset($result['skipped'])) {
+                $skippedList = $result['skipped'];
+                $calledList = $result['called'] ?? [];
+            } else {
+                [$skippedOne, $nextOne] = $result + [null, null];
+                $skippedList = $skippedOne ? [$skippedOne] : [];
+                $calledList = $nextOne ? [$nextOne] : [];
             }
 
-            if ($nextStudent) {
+            if (empty($skippedList)) {
+                continue;
+            }
+
+            foreach ($skippedList as $skipped) {
+                if ($skipped->phone_number) {
+                    $sms->sendSkippedNotification($skipped->phone_number, $skipped->ticket_number);
+                }
+            }
+
+            foreach ($calledList as $nextStudent) {
                 Cache::forever("current_serving_number_{$department->id}", $nextStudent->ticket_number);
                 if ($nextStudent->phone_number) {
                     $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
                 }
-            } else {
+            }
+
+            if (empty($calledList)) {
                 Cache::forget("current_serving_number_{$department->id}");
             }
 
@@ -54,16 +73,19 @@ class AutoSkipQueue extends Command
                 ->where('status', 'waiting')
                 ->count();
 
+            $firstCalled = $calledList[0] ?? null;
+            $skippedTickets = implode(', ', array_map(fn ($s) => $s->ticket_number, $skippedList));
+
             event(new QueueUpdated(
                 $department->id,
-                $nextStudent?->ticket_number ?? 'Waiting',
+                $firstCalled?->ticket_number ?? 'Waiting',
                 $upNext?->ticket_number ?? 'Waiting',
                 $waitingCount,
                 null,
-                $skipped->ticket_number
+                $skippedList[0]->ticket_number
             ));
 
-            $this->info("{$department->name}: skipped {$skipped->ticket_number}.");
+            $this->info("{$department->name}: skipped {$skippedTickets}.");
         }
 
         return Command::SUCCESS;

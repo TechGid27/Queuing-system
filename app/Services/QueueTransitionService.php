@@ -10,19 +10,25 @@ use Illuminate\Support\Facades\DB;
 
 class QueueTransitionService
 {
-    public function callNext(Department $department, ?User $actor = null): QueueEntry
+    public function callNext(Department $department, ?User $actor = null, ?int $counterId = null): QueueEntry
     {
-        return DB::transaction(function () use ($department, $actor) {
+        return DB::transaction(function () use ($department, $actor, $counterId) {
             $lockedDepartment = $this->lockDepartment($department);
             $this->ensureOperational($lockedDepartment);
 
-            $serving = $this->todayQueue($lockedDepartment)
-                ->where('status', 'serving')
-                ->lockForUpdate()
-                ->first();
+            $counter = $this->resolveFreeCounter($lockedDepartment, $counterId);
 
-            if ($serving) {
-                throw new \LogicException('Complete or skip the current ticket before calling the next student.');
+            // One staff = one serving at a time within the department.
+            if ($actor && $actor->role === 'staff') {
+                $alreadyServing = $this->todayQueue($lockedDepartment)
+                    ->where('status', 'serving')
+                    ->where('served_by', $actor->id)
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($alreadyServing) {
+                    throw new \LogicException('Complete or skip your current ticket before calling the next student.');
+                }
             }
 
             $next = $this->todayQueue($lockedDepartment)
@@ -38,6 +44,8 @@ class QueueTransitionService
             $next->update([
                 'status' => 'serving',
                 'served_at' => now(),
+                'counter_id' => $counter->id,
+                'served_by' => $actor?->id,
             ]);
 
             $this->record(
@@ -49,7 +57,7 @@ class QueueTransitionService
                 toStatus: 'serving'
             );
 
-            return $next->fresh();
+            return $next->fresh(['counter', 'servedBy']);
         });
     }
 
@@ -120,7 +128,7 @@ class QueueTransitionService
                 return null;
             }
 
-            $serving = $this->todayQueue($lockedDepartment)
+            $expired = $this->todayQueue($lockedDepartment)
                 ->where('status', 'serving')
                 ->where(function ($query) {
                     $query->where('served_at', '<', now()->subMinutes(3))
@@ -130,34 +138,46 @@ class QueueTransitionService
                         });
                 })
                 ->lockForUpdate()
-                ->first();
+                ->get();
 
-            if (! $serving) {
+            if ($expired->isEmpty()) {
                 return null;
             }
 
-            $serving->update([
-                'status' => 'no_response',
-                'completed_at' => now(),
-            ]);
-            $this->record(
-                action: 'auto_skipped',
-                department: $lockedDepartment,
-                entry: $serving,
-                fromStatus: 'serving',
-                toStatus: 'no_response'
-            );
+            $skipped = [];
+            foreach ($expired as $serving) {
+                $serving->update([
+                    'status' => 'no_response',
+                    'completed_at' => now(),
+                ]);
+                $this->record(
+                    action: 'auto_skipped',
+                    department: $lockedDepartment,
+                    entry: $serving,
+                    fromStatus: 'serving',
+                    toStatus: 'no_response'
+                );
+                $skipped[] = $serving->fresh();
+            }
 
-            $next = $this->todayQueue($lockedDepartment)
-                ->where('status', 'waiting')
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->first();
+            // Refill every free counter in order.
+            $called = [];
+            foreach ($this->freeCounters($lockedDepartment) as $counter) {
+                $next = $this->todayQueue($lockedDepartment)
+                    ->where('status', 'waiting')
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($next) {
+                if (! $next) {
+                    break;
+                }
+
                 $next->update([
                     'status' => 'serving',
                     'served_at' => now(),
+                    'counter_id' => $counter->id,
+                    'served_by' => null,
                 ]);
                 $this->record(
                     action: 'auto_called',
@@ -166,9 +186,10 @@ class QueueTransitionService
                     fromStatus: 'waiting',
                     toStatus: 'serving'
                 );
+                $called[] = $next->fresh(['counter']);
             }
 
-            return [$serving->fresh(), $next?->fresh()];
+            return ['skipped' => $skipped, 'called' => $called];
         });
     }
 
@@ -198,6 +219,73 @@ class QueueTransitionService
 
             return $lockedDepartment->fresh();
         });
+    }
+
+    private function resolveFreeCounter(Department $lockedDepartment, ?int $counterId = null): \App\Models\Counter
+    {
+        $busyCounterIds = $this->todayQueue($lockedDepartment)
+            ->where('status', 'serving')
+            ->whereNotNull('counter_id')
+            ->pluck('counter_id')
+            ->all();
+
+        if ($counterId) {
+            $counter = \App\Models\Counter::whereKey($counterId)
+                ->where('department_id', $lockedDepartment->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($counter && $counter->is_active, 404, 'Counter not available.');
+
+            if (in_array($counter->id, $busyCounterIds, true)) {
+                throw new \LogicException("{$counter->name} is already serving. Choose another counter.");
+            }
+
+            return $counter;
+        }
+
+        $counter = \App\Models\Counter::where('department_id', $lockedDepartment->id)
+            ->where('is_active', true)
+            ->whereNotIn('id', $busyCounterIds ?: [0])
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+
+        // Backward compat: departments without counters get a default one.
+        $counter ??= \App\Models\Counter::create([
+            'department_id' => $lockedDepartment->id,
+            'name' => 'Window 1',
+            'is_active' => true,
+        ]);
+
+        // Legacy rows without counter_id occupy the default counter.
+        $legacyServing = $this->todayQueue($lockedDepartment)
+            ->where('status', 'serving')
+            ->whereNull('counter_id')
+            ->lockForUpdate()
+            ->exists();
+
+        if ($legacyServing) {
+            throw new \LogicException('Complete or skip the current ticket before calling the next student.');
+        }
+
+        return $counter;
+    }
+
+    private function freeCounters(Department $lockedDepartment): \Illuminate\Support\Collection
+    {
+        $busyCounterIds = $this->todayQueue($lockedDepartment)
+            ->where('status', 'serving')
+            ->whereNotNull('counter_id')
+            ->pluck('counter_id')
+            ->all();
+
+        return \App\Models\Counter::where('department_id', $lockedDepartment->id)
+            ->where('is_active', true)
+            ->whereNotIn('id', $busyCounterIds ?: [0])
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
     }
 
     private function lockDepartment(Department $department): Department

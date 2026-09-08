@@ -108,11 +108,6 @@
             <p class="text-sm text-slate-400 mt-1">Open a queue console or manage the configuration behind it.</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            @if($overview['departments']->isNotEmpty())
-                <a href="{{ route('admin.queue', ['department_id' => $overview['departments'][0]['id']]) }}" class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors">
-                    <i class="bi bi-display"></i> Open Queue Console
-                </a>
-            @endif
             <a href="{{ route('admin.departments.index') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors">
                 <i class="bi bi-building"></i> Departments & Staff
             </a>

@@ -126,6 +126,16 @@
 
                 <div class="label-tag text-blue-300 mb-6">Now Serving</div>
                 <div class="ticket-now text-white text-center" id="tv-current">{{ $currentNumber }}</div>
+                <div id="tv-serving-grid" class="mt-6 flex items-stretch justify-center gap-3 flex-wrap max-w-3xl">
+                    @forelse(($currentServings ?? collect()) as $serving)
+                    <div class="bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center min-w-[120px]">
+                        <div class="text-[10px] font-bold tracking-widest text-blue-200 uppercase">{{ $serving->counter?->name ?? 'Window' }}</div>
+                        <div class="text-2xl font-black text-white tabular-nums">{{ $serving->ticket_number }}</div>
+                    </div>
+                    @empty
+                    <div class="text-slate-300/70 text-sm font-medium" id="tv-serving-empty">Waiting for next ticket…</div>
+                    @endforelse
+                </div>
                 <div class="mt-8 flex items-center gap-2 bg-white/10 px-5 py-2 rounded-full">
                     <i class="bi bi-bell-fill text-yellow-300 text-sm"></i>
                     <span class="text-white/80 text-sm font-medium">Please proceed to the window</span>
@@ -264,11 +274,37 @@ function renderQueueState(data) {
     const averageLabel = document.getElementById('tv-avg-label');
     const nowServing = document.getElementById('tv-now-serving-bg');
     const breakBanner = document.getElementById('tv-break-banner');
+    const servingGrid = document.getElementById('tv-serving-grid');
 
     if (current && data.current !== undefined && current.innerText !== String(data.current)) {
         current.innerText = data.current;
         flashEl(current);
     }
+    if (servingGrid && (data.current_servings !== undefined || data.current_serving !== undefined)) {
+        const list = data.current_servings ?? (data.current_serving ? [data.current_serving] : []);
+        servingGrid.replaceChildren();
+        if (!list.length) {
+            const empty = document.createElement('div');
+            empty.className = 'text-slate-300/70 text-sm font-medium';
+            empty.textContent = 'Waiting for next ticket…';
+            servingGrid.appendChild(empty);
+        } else {
+            list.slice(0, 8).forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center min-w-[120px]';
+                const label = document.createElement('div');
+                label.className = 'text-[10px] font-bold tracking-widest text-blue-200 uppercase';
+                label.textContent = String(s.counter_name ?? 'Window');
+                const num = document.createElement('div');
+                num.className = 'text-2xl font-black text-white tabular-nums';
+                num.textContent = String(s.ticket_number ?? '');
+                card.append(label, num);
+                servingGrid.appendChild(card);
+            });
+            flashEl(servingGrid);
+        }
+    }
+
     if (next && data.next !== undefined) next.innerText = data.next;
     if (waiting && data.waiting_count !== undefined) waiting.innerText = data.waiting_count;
     if (data.waiting_list) updateQueueList(data.waiting_list);

@@ -3,6 +3,7 @@
     const COMPLETE_URL_TEMPLATE = @json(route('admin.complete', ['id' => '__QUEUE_ID__']));
     const REJECT_URL_TEMPLATE = @json(route('admin.reject', ['id' => '__QUEUE_ID__']));
     const CALL_NEXT_URL = @json(route('admin.callNext'));
+    const USER_ROLE = @json(auth()->user()->role);
 
     function escapeHtml(value) {
         const element = document.createElement('div');
@@ -35,88 +36,124 @@
                 const badgeEl     = document.getElementById('waiting-badge');
 
                 if (waitingEl)   waitingEl.innerText   = data.waiting_count;
-                if (servingEl)   servingEl.innerText   = data.current ? 1 : 0;
+                if (servingEl)   servingEl.innerText   = data.serving_count ?? (data.currents ? data.currents.length : (data.current ? 1 : 0));
                 if (completedEl) completedEl.innerText = data.completed_count;
                 if (skippedEl)   skippedEl.innerText   = data.skipped_count;
                 if (badgeEl)     badgeEl.innerText     = data.waiting_count + ' in queue';
 
-                // ── Now Serving panel ──────────────────────────────────────
+                // ── Now Serving panel (multi-counter cards) ────────────────
                 const nowServingEl = document.getElementById('now-serving-panel');
                 if (nowServingEl) {
-                    if (data.current) {
-                        const s = data.current;
-                        // served_at_ts comes from the API (Unix seconds)
-                        const servedAtTs = Number(s.served_at_ts ?? Math.floor(Date.now() / 1000));
-                        const ticketNumber = escapeHtml(s.ticket_number);
-                        const name = escapeHtml(s.name);
-                        const purpose = escapeHtml(s.purpose);
-                        const phoneNumber = escapeHtml(s.phone_number);
-                        const rejectUrl = escapeHtml(queueActionUrl(REJECT_URL_TEMPLATE, s.id));
-                        const completeUrl = escapeHtml(queueActionUrl(COMPLETE_URL_TEMPLATE, s.id));
-                        const actionsDisabled = !data.department_active ? 'disabled' : '';
-                         const callNextDisabled = !data.department_active || data.queue_paused || data.waiting_count === 0 || data.current ? 'disabled' : '';
-                        nowServingEl.innerHTML = `
-                            <div class="text-center py-4">
-                                <div class="ticket-xl text-primary mb-3">${ticketNumber}</div>
-                                <div class="text-lg font-bold text-slate-800">${name}</div>
-                                <div class="text-sm text-slate-400 mt-1">${purpose}</div>
-                                <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
-                                    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
-                                        <i class="bi bi-phone"></i> ${phoneNumber}
-                                    </span>
-                                    <span id="auto-skip-timer"
-                                        class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500"
-                                        data-served-at="${servedAtTs}">
-                                        <i class="bi bi-clock"></i> <span id="auto-skip-label">--:--</span>
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="border-t border-slate-100 pt-5 mt-2 flex flex-wrap gap-2 justify-center">
-                                <form action="${rejectUrl}" method="POST">
-                                    <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                    <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                        <i class="bi bi-skip-forward-fill"></i> Skip / No Show
-                                    </button>
-                                </form>
-                                <form action="${completeUrl}" method="POST">
-                                    <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                    <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                        <i class="bi bi-check-lg"></i> Complete
-                                    </button>
-                                </form>
-                                <form action="${CALL_NEXT_URL}" method="POST">
-                                    <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                    <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="${data.current ? '1' : '0'}" ${callNextDisabled}
-                                        class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                        <i class="bi bi-arrow-right-circle-fill"></i> Call Next
-                                    </button>
-                                </form>
-                            </div>`;
-                        // Restart the countdown for the newly rendered timer
+                    const currents = data.currents ?? (data.current ? [data.current] : []);
+                    const byCounter = {};
+                    currents.forEach(s => { if (s.counter_id) byCounter[s.counter_id] = s; });
+                    // Legacy single without counter_id occupies the first card.
+                    const legacy = currents.find(s => !s.counter_id);
+
+                    const cards = nowServingEl.querySelectorAll('[data-counter-card]');
+                    if (cards.length > 0) {
+                        cards.forEach(card => {
+                            const counterId = card.getAttribute('data-counter-card');
+                            const body = card.querySelector(`[data-counter-body="${counterId}"]`);
+                            const status = card.querySelector(`[data-counter-status="${counterId}"]`);
+                            let s = byCounter[counterId];
+                            if (!s && legacy && !Object.values(byCounter).includes(legacy)) {
+                                // Show legacy single-lane serving on first idle card.
+                                const firstIdle = nowServingEl.querySelector('[data-counter-card]');
+                                if (firstIdle === card) s = legacy;
+                            }
+                            if (!body) return;
+
+                            if (s) {
+                                const ticketNumber = escapeHtml(s.ticket_number);
+                                const name = escapeHtml(s.name);
+                                const purpose = escapeHtml(s.purpose);
+                                const phoneNumber = escapeHtml(s.phone_number);
+                                const staffName = escapeHtml(s.served_by_name ?? s.servedBy?.name ?? '');
+                                const rejectUrl = escapeHtml(queueActionUrl(REJECT_URL_TEMPLATE, s.id));
+                                const completeUrl = escapeHtml(queueActionUrl(COMPLETE_URL_TEMPLATE, s.id));
+                                const actionsDisabled = !data.department_active ? 'disabled' : '';
+                                if (status) {
+                                    status.innerText = 'SERVING';
+                                    status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700';
+                                }
+                                body.innerHTML = `
+                                    <div class="text-center py-2">
+                                        <div class="ticket-lg text-red-600 mb-2">${ticketNumber}</div>
+                                        <div class="text-sm font-bold text-slate-800">${name}</div>
+                                        <div class="text-xs text-slate-400 mt-0.5">${purpose}</div>
+                                        <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                                            <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
+                                                <i class="bi bi-phone"></i> ${phoneNumber}
+                                            </span>
+                                            ${staffName ? `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-xs font-semibold px-3 py-1 rounded-full"><i class="bi bi-person"></i> ${staffName}</span>` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
+                                        <form action="${rejectUrl}" method="POST">
+                                            <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                            <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                                <i class="bi bi-skip-forward-fill"></i> Skip
+                                            </button>
+                                        </form>
+                                        <form action="${completeUrl}" method="POST">
+                                            <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                            <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                                <i class="bi bi-check-lg"></i> Complete
+                                            </button>
+                                        </form>
+                                    </div>`;
+                            } else {
+                                const callBtn = USER_ROLE !== 'admin' ? `
+                                    <form action="${CALL_NEXT_URL}" method="POST" class="mt-3">
+                                        <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                        <input type="hidden" name="counter_id" value="${counterId}">
+                                        <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
+                                            class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                            <i class="bi bi-play-circle-fill"></i> Call Next here
+                                        </button>
+                                    </form>` : '';
+                                if (status) {
+                                    status.innerText = 'IDLE';
+                                    status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400';
+                                }
+                                const counterLabel = card.querySelector('.uppercase')?.innerText ?? 'this counter';
+                                body.innerHTML = `
+                                    <div class="text-center py-6 text-slate-400">
+                                        <div class="text-3xl mb-2">📭</div>
+                                        <div class="text-xs font-semibold">No student at ${escapeHtml(counterLabel)}</div>
+                                        ${callBtn}
+                                    </div>`;
+                            }
+                        });
+                    } else if (data.current) {
+                        // Fallback: no counter cards rendered (legacy view).
                         if (typeof updateAutoSkipTimer === 'function') updateAutoSkipTimer();
                     } else {
+                        const callBtn = USER_ROLE !== 'admin' ? `
+                            <form action="${CALL_NEXT_URL}" method="POST" class="mt-6 inline-block">
+                                <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
+                                    class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                    <i class="bi bi-play-circle-fill"></i> Call First Student
+                                </button>
+                            </form>` : '';
                         nowServingEl.innerHTML = `
                             <div class="text-center py-10">
                                 <div class="text-5xl mb-3">📭</div>
                                 <div class="text-base font-semibold text-slate-400">No student is currently being served</div>
-                                <form action="${CALL_NEXT_URL}" method="POST" class="mt-6 inline-block">
-                                    <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                         <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
-                                        class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                        <i class="bi bi-play-circle-fill"></i> Call First Student
-                                    </button>
-                                </form>
+                                ${callBtn}
                             </div>`;
                     }
                 }
 
                 // ── Pause/Resume UI sync ──────────────────────────────────
                 if (data.queue_paused !== undefined) {
-                    updatePauseResumeUI(data.queue_paused, data.lunch_break_start, data.lunch_break_end, data.pause_source);
+                    updatePauseResumeUI(data.queue_paused, data.lunch_break_start, data.lunch_break_end, data.pause_source, data.pause_mode);
                 }
 
                 // ── Waiting list ───────────────────────────────────────────

@@ -25,6 +25,12 @@
                         class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                         placeholder="e.g. Cashier">
                 </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Front Desks / Counters</label>
+                    <input type="number" name="counters" value="{{ old('counters', 1) }}" required min="1" max="20"
+                        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                    <p class="text-[11px] text-slate-400 mt-1">e.g. Admission = 4, Cashier = 2. Each counter serves one ticket at a time.</p>
+                </div>
                 <button type="submit" class="w-full bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
                     <i class="bi bi-building-add"></i> Add Department
                 </button>
@@ -83,7 +89,7 @@
                                 {{ $department->is_active ? 'ACTIVE' : 'INACTIVE' }}
                             </span>
                         </div>
-                        <p class="text-xs text-slate-400 mt-1">{{ $department->staff->count() }} staff · {{ $department->queue_entries_count }} total tickets</p>
+                        <p class="text-xs text-slate-400 mt-1">{{ $department->staff->count() }} staff · {{ $department->counters->count() }} counters · {{ $department->queue_entries_count }} total tickets</p>
                     </div>
                     <form action="{{ route('admin.departments.status', $department) }}" method="POST"
                         onsubmit="return confirm('{{ $department->is_active ? 'Deactivate this department and block its staff queue access?' : 'Activate this department?' }}')">
@@ -95,6 +101,30 @@
                         </button>
                     </form>
                 </header>
+
+                <div class="px-5 py-3 border-t border-slate-100">
+                    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Counters ({{ $department->counters->count() }})</div>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        @forelse($department->counters as $counter)
+                            <form action="{{ route('admin.counters.status', $counter) }}" method="POST" class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border {{ $counter->is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-400' }}">
+                                @csrf
+                                @method('PATCH')
+                                <input type="hidden" name="is_active" value="{{ $counter->is_active ? 0 : 1 }}">
+                                <span>{{ $counter->name }}</span>
+                                <button type="submit" class="underline">{{ $counter->is_active ? 'Active' : 'Off' }}</button>
+                            </form>
+                        @empty
+                            <span class="text-xs text-slate-400">No counters yet.</span>
+                        @endforelse
+                    </div>
+                    <form action="{{ route('admin.counters.store') }}" method="POST" class="flex gap-2">
+                        @csrf
+                        <input type="hidden" name="department_id" value="{{ $department->id }}">
+                        <input type="text" name="name" required maxlength="255" placeholder="e.g. Window {{ $department->counters->count() + 1 }}"
+                            class="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                        <button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Add</button>
+                    </form>
+                </div>
 
                 <div class="divide-y divide-slate-50">
                     @forelse($department->staff as $staff)

@@ -20,6 +20,8 @@ class QueueEntry extends Model
         'user_id',
         'guest_id',
         'department_id',
+        'counter_id',
+        'served_by',
         'queue_date',
         'purpose_id',
     ];
@@ -37,6 +39,16 @@ class QueueEntry extends Model
     public function department()
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function counter()
+    {
+        return $this->belongsTo(Counter::class);
+    }
+
+    public function servedBy()
+    {
+        return $this->belongsTo(User::class, 'served_by');
     }
 
     public function purposeModel()

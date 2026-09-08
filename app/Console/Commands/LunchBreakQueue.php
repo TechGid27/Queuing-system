@@ -46,7 +46,7 @@ class LunchBreakQueue extends Command
 
     private function setPaused(bool $paused, QueueTransitionService $transitions): void
     {
-        $departments = Department::active()->get();
+        $departments = Department::active()->where('auto_pause_enabled', true)->get();
 
         foreach ($departments as $department) {
             if ($paused) {
