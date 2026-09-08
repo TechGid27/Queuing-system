@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\AdminOverviewController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\PurposeController;
 use App\Http\Controllers\QueueController;
@@ -23,8 +24,8 @@ Route::middleware('guest:web,student')->group(function () {
     Route::post('/verify', [AuthController::class, 'registerStudent'])->middleware('recaptcha')->name('register.post');
 
     // One-time initial administrator registration.
-    Route::get('/private/register', [AuthController::class, 'showDepartmentRegister'])->name('private_register');
-    Route::post('/private/register', [AuthController::class, 'registerStaff'])->middleware('recaptcha')->name('private_register.post');
+    // Route::get('/private/register', [AuthController::class, 'showDepartmentRegister'])->name('private_register');
+    // Route::post('/private/register', [AuthController::class, 'registerStaff'])->middleware('recaptcha')->name('private_register.post');
 
     // OTP Verification
     Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('student.verify.show');
@@ -48,9 +49,11 @@ Route::middleware(['auth:student', 'is_student'])->group(function () {
     Route::post('/queue', [QueueController::class, 'store'])->name('queue.store');
 });
 
+
 // ─── Staff Portal (auth required) ────────────────────────────────────────────
 Route::middleware(['auth:web', 'is_staff'])->group(function () {
     Route::get('/admin', [StaffController::class, 'index'])->name('admin.index');
+    Route::get('/admin/queue', [StaffController::class, 'index'])->name('admin.queue');
     Route::post('/admin/call-next', [StaffController::class, 'callNext'])->name('admin.callNext');
     Route::post('/admin/reject/{id}', [StaffController::class, 'reject'])->name('admin.reject');
     Route::post('/admin/accept/{id}', [StaffController::class, 'complete'])->name('admin.complete');
@@ -59,16 +62,23 @@ Route::middleware(['auth:web', 'is_staff'])->group(function () {
 
     Route::get('/admin/waiting-list', [StaffController::class, 'waitingList'])->name('admin.waitingList');
     Route::post('/admin/toggle-pause', [StaffController::class, 'togglePause'])->name('admin.togglePause');
+    Route::post('/admin/pause-mode', [StaffController::class, 'updatePauseMode'])->name('admin.pauseMode');
 
 });
 
 // ─── Administrator-only management ───────────────────────────────────────────
 Route::middleware(['auth:web', 'is_admin'])->group(function () {
+    // Route::get('/admin', [StaffController::class, 'index'])->name('admin.index');
+    Route::get('/admin/overview', [AdminOverviewController::class, 'index'])->name('admin.overview');
+    Route::get('/admin/overview/status', [AdminOverviewController::class, 'status'])->name('admin.overview.status');
+    Route::get('/admin/audit-log', [AdminOverviewController::class, 'auditLog'])->name('admin.audit');
     Route::get('/admin/departments', [DepartmentController::class, 'index'])->name('admin.departments.index');
     Route::post('/admin/departments', [DepartmentController::class, 'store'])->name('admin.departments.store');
     Route::patch('/admin/departments/{department}/status', [DepartmentController::class, 'updateStatus'])->name('admin.departments.status');
     Route::post('/admin/staff', [DepartmentController::class, 'storeStaff'])->name('admin.staff.store');
     Route::patch('/admin/staff/{staff}/status', [DepartmentController::class, 'updateStaffStatus'])->name('admin.staff.status');
+    Route::post('/admin/counters', [DepartmentController::class, 'storeCounter'])->name('admin.counters.store');
+    Route::patch('/admin/counters/{counter}/status', [DepartmentController::class, 'updateCounterStatus'])->name('admin.counters.status');
 
     Route::resource('/admin/purposes', PurposeController::class)
         ->only(['index', 'store', 'update', 'destroy'])

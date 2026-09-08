@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Events\QueueUpdated;
 use App\Models\Department;
 use App\Models\QueueEntry;
+use App\Services\QueueTransitionService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -16,7 +17,7 @@ class LunchBreakQueue extends Command
 
     protected $description = 'Automatically pause and resume active department queues at lunch';
 
-    public function handle(): int
+    public function handle(QueueTransitionService $transitions): int
     {
         $startTime = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
         $endTime = DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30';
@@ -25,14 +26,14 @@ class LunchBreakQueue extends Command
         $todayEnd = Carbon::createFromFormat('H:i', $endTime, $now->timezone)->setDateFrom($now);
 
         if ($now->format('H:i') === $todayStart->format('H:i')) {
-            $this->setPaused(true);
+                $this->setPaused(true, $transitions);
             $this->info("Active department queues paused at {$startTime}.");
 
             return Command::SUCCESS;
         }
 
         if ($now->format('H:i') === $todayEnd->format('H:i')) {
-            $this->setPaused(false);
+                $this->setPaused(false, $transitions);
             $this->info("Active department queues resumed at {$endTime}.");
 
             return Command::SUCCESS;
@@ -43,9 +44,9 @@ class LunchBreakQueue extends Command
         return Command::SUCCESS;
     }
 
-    private function setPaused(bool $paused): void
+    private function setPaused(bool $paused, QueueTransitionService $transitions): void
     {
-        $departments = Department::active()->get();
+        $departments = Department::active()->where('auto_pause_enabled', true)->get();
 
         foreach ($departments as $department) {
             if ($paused) {
@@ -56,10 +57,7 @@ class LunchBreakQueue extends Command
                 continue;
             }
 
-            $department->update([
-                'queue_paused' => $paused,
-                'lunch_break_paused' => $paused,
-            ]);
+            $department = $transitions->setPaused($department, $paused, null, 'lunch');
             $query = QueueEntry::where('department_id', $department->id)
                 ->whereDate('queue_date', today());
             $serving = (clone $query)->where('status', 'serving')->first();

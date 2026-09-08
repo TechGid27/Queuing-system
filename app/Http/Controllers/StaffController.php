@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\QueueUpdated;
 use App\Models\Department;
 use App\Models\QueueEntry;
+use App\Services\QueueTransitionService;
 use App\Services\SmsService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -15,10 +16,12 @@ use Illuminate\Support\Facades\DB;
 class StaffController extends Controller
 {
     private SmsService $sms;
+    private QueueTransitionService $transitions;
 
-    public function __construct(SmsService $sms)
+    public function __construct(SmsService $sms, QueueTransitionService $transitions)
     {
         $this->sms = $sms;
+        $this->transitions = $transitions;
     }
 
     private function resolveDepartment(Request $request): ?Department
@@ -72,6 +75,7 @@ class StaffController extends Controller
         $user = Auth::guard('web')->user();
         abort_unless($user && $user->is_active, 403);
         abort_unless($entry->queue_date?->isToday(), 404);
+        abort_unless($entry->department?->is_active, 403);
 
         if ($user->role === 'staff') {
             abort_unless((int) $user->department_id === (int) $entry->department_id, 403);
@@ -87,10 +91,11 @@ class StaffController extends Controller
     ): void {
         $query = QueueEntry::where('department_id', $departmentId)
             ->whereDate('queue_date', today());
-        $serving = (clone $query)->where('status', 'serving')->first();
-        $current = $serving?->ticket_number ?? 'Waiting';
+        $servingCount = (clone $query)->where('status', 'serving')->count();
+        $firstServing = (clone $query)->where('status', 'serving')->orderBy('id')->first();
+        $current = $firstServing?->ticket_number ?? 'Waiting';
 
-        if ($serving) {
+        if ($servingCount > 0) {
             Cache::forever($this->currentCacheKey($departmentId), $current);
         } else {
             Cache::forget($this->currentCacheKey($departmentId));
@@ -113,28 +118,58 @@ class StaffController extends Controller
     {
         $selectedDepartment = $this->resolveDepartment($request);
         $queue = $this->todayQueue($selectedDepartment);
-        $currentServing = (clone $queue)->where('status', 'serving')->first();
+        $currentServings = (clone $queue)
+            ->where('status', 'serving')
+            ->with(['counter', 'servedBy'])
+            ->orderBy('id')
+            ->get();
+        // Backward compat for views still expecting a single $currentServing.
+        $currentServing = $currentServings->first();
+        $servingCount = $currentServings->count();
         $waitingCount = (clone $queue)->where('status', 'waiting')->count();
         $completedCount = (clone $queue)->where('status', 'completed')->count();
         $skippedCount = (clone $queue)->where('status', 'no_response')->count();
         $waitingStudents = (clone $queue)->where('status', 'waiting')->orderBy('id')->paginate(10)->withQueryString();
+        $counters = $selectedDepartment
+            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)->orderBy('id')->get()
+            : collect();
+        // Backward compat: legacy serving rows without counter_id display on the first active counter.
+        $firstCounter = $counters->firstWhere('is_active', true) ?? $counters->first();
+        if ($firstCounter) {
+            foreach ($currentServings as $serving) {
+                if (! $serving->counter_id) {
+                    $serving->setRelation('counter', $firstCounter);
+                    $serving->counter_id = $firstCounter->id;
+                }
+            }
+        }
+        $busyCounterIds = $currentServings->pluck('counter_id')->filter()->all();
 
         $user = Auth::guard('web')->user();
+        $myServing = ($user && $user->role === 'staff') ? $currentServings->firstWhere('served_by', $user->id) : null;
         $isAdmin = $user->role === 'admin';
         $departments = $isAdmin
             ? Department::orderBy('name')->get()
             : collect([$selectedDepartment])->filter();
         $queuePaused = (bool) $selectedDepartment?->queue_paused;
+        $autoPauseEnabled = (bool) ($selectedDepartment?->auto_pause_enabled ?? true);
         $lunchBreakStart = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
         $lunchBreakEnd = DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30';
+        $servingCount = $currentServings->count();
 
         return view('admin.dashboard', compact(
             'currentServing',
+            'currentServings',
+            'servingCount',
+            'counters',
+            'busyCounterIds',
+            'myServing',
             'waitingCount',
             'completedCount',
             'skippedCount',
             'waitingStudents',
             'queuePaused',
+            'autoPauseEnabled',
             'lunchBreakStart',
             'lunchBreakEnd',
             'selectedDepartment',
@@ -156,6 +191,14 @@ class StaffController extends Controller
                 : back()->with('warning', $message);
         }
 
+        if ((bool) $department->auto_pause_enabled) {
+            $message = 'Switch to Manual mode to use Pause / Resume. This department is on Automatic (lunch break) mode.';
+
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->with('warning', $message);
+        }
+
         $validated = $request->validate([
             'action' => 'nullable|in:pause,resume',
         ]);
@@ -166,10 +209,20 @@ class StaffController extends Controller
             default => ! $department->queue_paused,
         };
 
-        $department->update([
-            'queue_paused' => $isPaused,
-            'lunch_break_paused' => false,
-        ]);
+        try {
+            $department = $this->transitions->setPaused(
+                $department,
+                $isPaused,
+                Auth::guard('web')->user(),
+                'manual'
+            );
+        } catch (\LogicException $exception) {
+            $message = $exception->getMessage();
+
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->with('warning', $message);
+        }
         $this->broadcastQueueState($department->id);
 
         $message = $isPaused
@@ -181,6 +234,47 @@ class StaffController extends Controller
                 'success' => true,
                 'department_id' => $department->id,
                 'queue_paused' => $isPaused,
+                'message' => $message,
+            ]);
+        }
+
+        return back()->with('success', $message);
+    }
+
+    public function updatePauseMode(Request $request)
+    {
+        $department = $this->resolveDepartment($request);
+        abort_unless($department, 404);
+
+        $validated = $request->validate([
+            'mode' => 'required|in:auto,manual',
+            'department_id' => 'nullable|integer|exists:departments,id',
+        ]);
+
+        $autoEnabled = $validated['mode'] === 'auto';
+        $department->update(['auto_pause_enabled' => $autoEnabled]);
+
+        // Switching to Manual during a lunch auto-pause converts it to a manual
+        // pause so staff can resume it. Switching to Auto keeps current state
+        // and lets the lunch scheduler take over from here.
+        if (! $autoEnabled && $department->lunch_break_paused) {
+            $department->update(['lunch_break_paused' => false]);
+            $department->refresh();
+        }
+
+        $this->broadcastQueueState($department->id);
+
+        $message = $autoEnabled
+            ? "{$department->name} set to Automatic (lunch break) mode."
+            : "{$department->name} set to Manual mode.";
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'department_id' => $department->id,
+                'auto_pause_enabled' => $autoEnabled,
+                'pause_mode' => $validated['mode'],
+                'queue_paused' => (bool) $department->queue_paused,
                 'message' => $message,
             ]);
         }
@@ -201,52 +295,30 @@ class StaffController extends Controller
             return back()->with('warning', 'Resume this department queue before calling the next student.');
         }
 
-        if (! Cache::add("call_next_lock_{$department->id}", true, 3)) {
-            return back()->with('warning', 'Please wait before calling the next student.');
+        $validated = $request->validate([
+            'counter_id' => 'nullable|integer|exists:counters,id',
+            'department_id' => 'nullable|integer|exists:departments,id',
+        ]);
+
+        $user = Auth::guard('web')->user();
+        if ($user && $user->role === 'staff') {
+            $alreadyServing = $this->todayQueue($department)
+                ->where('status', 'serving')
+                ->where('served_by', $user->id)
+                ->exists();
+
+            if ($alreadyServing) {
+                return back()->with('warning', 'Complete or skip your current ticket before calling the next student.');
+            }
         }
 
-        [$nextStudent, $completedStudent] = DB::transaction(function () use ($department) {
-            $serving = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
-                ->where('status', 'serving')
-                ->lockForUpdate()
-                ->first();
-
-            $next = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
-                ->where('status', 'waiting')
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->first();
-
-            if (! $next) {
-                return [null, null];
-            }
-
-            if ($serving) {
-                $serving->update([
-                    'status' => 'completed',
-                    'completed_at' => now(),
-                ]);
-            }
-
-            $next->update([
-                'status' => 'serving',
-                'served_at' => now(),
-            ]);
-
-            return [$next, $serving];
-        });
-
-        if (! $nextStudent) {
-            return back()->with('warning', 'No students waiting in this department.');
+        try {
+            $nextStudent = $this->transitions->callNext($department, $user, $validated['counter_id'] ?? null);
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
 
         Cache::forever($this->currentCacheKey($department->id), $nextStudent->ticket_number);
-
-        if ($completedStudent?->phone_number) {
-            $this->sms->sendCompletedNotification($completedStudent->phone_number, $completedStudent->ticket_number);
-        }
 
         if ($nextStudent->phone_number) {
             $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
@@ -261,9 +333,11 @@ class StaffController extends Controller
             $this->sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
         }
 
-        $this->broadcastQueueState($department->id, $completedStudent?->ticket_number);
+        $this->broadcastQueueState($department->id);
 
-        return back()->with('success', "Now serving {$nextStudent->ticket_number} in {$department->name}.");
+        $counterSuffix = $nextStudent->counter ? " at {$nextStudent->counter->name}" : '';
+
+        return back()->with('success', "Now serving {$nextStudent->ticket_number} in {$department->name}{$counterSuffix}.");
     }
 
     public function complete($id)
@@ -271,14 +345,11 @@ class StaffController extends Controller
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 
-        if ($student->status !== 'serving') {
-            return back()->with('warning', 'Only the currently serving ticket can be completed.');
+        try {
+            $student = $this->transitions->complete($student, Auth::guard('web')->user());
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
-
-        $student->update([
-            'status' => 'completed',
-            'completed_at' => now(),
-        ]);
 
         if ($student->phone_number) {
             $this->sms->sendCompletedNotification($student->phone_number, $student->ticket_number);
@@ -295,14 +366,11 @@ class StaffController extends Controller
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 
-        if ($student->status !== 'serving') {
-            return back()->with('warning', 'Only the currently serving ticket can be skipped.');
+        try {
+            $student = $this->transitions->skip($student, Auth::guard('web')->user());
+        } catch (\LogicException $exception) {
+            return back()->with('warning', $exception->getMessage());
         }
-
-        $student->update([
-            'status' => 'no_response',
-            'completed_at' => now(),
-        ]);
 
         if ($student->phone_number) {
             $this->sms->sendSkippedNotification($student->phone_number, $student->ticket_number);
@@ -332,17 +400,31 @@ class StaffController extends Controller
             ->where('status', 'waiting')
             ->orderBy('id')
             ->paginate(10, ['id', 'ticket_number', 'name', 'purpose']);
-        $currentServing = (clone $queue)
+        $currentServings = (clone $queue)
             ->where('status', 'serving')
-            ->first(['id', 'ticket_number', 'name', 'purpose', 'phone_number', 'served_at', 'updated_at']);
+            ->with(['counter', 'servedBy'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($s) => array_merge($s->toArray(), [
+                'served_at_ts' => (($s->served_at ?? $s->updated_at)->timestamp ?? null),
+                'counter_name' => $s->counter?->name,
+                'served_by_name' => $s->servedBy?->name,
+            ]));
+        $currentServing = $currentServings->first();
+        $counters = $department
+            ? \App\Models\Counter::where('department_id', $department->id)->orderBy('id')->get(['id', 'name', 'is_active'])
+            : collect();
+        $busyCounterIds = (clone $queue)->where('status', 'serving')->whereNotNull('counter_id')->pluck('counter_id')->all();
 
         return response()->json([
             'department_id' => $department?->id,
             'department_active' => (bool) $department?->is_active,
             'waiting' => $waitingStudents->items(),
-            'current' => $currentServing ? array_merge($currentServing->toArray(), [
-                'served_at_ts' => ($currentServing->served_at ?? $currentServing->updated_at)->timestamp,
-            ]) : null,
+            'current' => $currentServing,
+            'currents' => $currentServings->values(),
+            'serving_count' => $currentServings->count(),
+            'counters' => $counters,
+            'busy_counter_ids' => $busyCounterIds,
             'waiting_count' => (clone $queue)->where('status', 'waiting')->count(),
             'pagination' => [
                 'current_page' => $waitingStudents->currentPage(),
@@ -352,6 +434,8 @@ class StaffController extends Controller
             'skipped_count' => (clone $queue)->where('status', 'no_response')->count(),
             'queue_paused' => (bool) $department?->queue_paused,
             'pause_source' => $department?->lunch_break_paused ? 'lunch' : 'manual',
+            'auto_pause_enabled' => (bool) ($department?->auto_pause_enabled ?? true),
+            'pause_mode' => ($department?->auto_pause_enabled ?? true) ? 'auto' : 'manual',
             'avg_serve_mins' => self::getAvgServeMinutes($department?->id),
             'lunch_break_start' => DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00',
             'lunch_break_end' => DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30',

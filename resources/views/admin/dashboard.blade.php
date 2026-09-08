@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('page-title', 'Dashboard')
+@section('page-title', 'Queue Console')
 
 @section('content')
 @php
@@ -45,7 +45,7 @@
         </div>
         <div>
             <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Serving</div>
-            <div class="text-2xl font-black text-blue-600 leading-tight" id="stat-serving">{{ $currentServing ? 1 : 0 }}</div>
+            <div class="text-2xl font-black text-blue-600 leading-tight" id="stat-serving">{{ $servingCount ?? ($currentServing ? 1 : 0) }}</div>
         </div>
     </div>
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
@@ -76,14 +76,30 @@
         <div class="flex items-center justify-between mb-6">
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
             <div class="flex items-center gap-2 flex-wrap justify-end">
+                @if(auth()->user()->role !== 'admin')
+                <div class="inline-flex items-center bg-slate-100 rounded-full p-0.5" role="group" aria-label="Pause mode">
+                    <button type="button" id="mode-auto-btn" onclick="sendPauseMode('auto')"
+                        class="text-[11px] font-bold px-3 py-1 rounded-full transition-colors {{ ($autoPauseEnabled ?? true) ? 'bg-white shadow text-slate-800' : 'text-slate-400' }}">
+                        Auto
+                    </button>
+                    <button type="button" id="mode-manual-btn" onclick="sendPauseMode('manual')"
+                        class="text-[11px] font-bold px-3 py-1 rounded-full transition-colors {{ ($autoPauseEnabled ?? true) ? 'text-slate-400' : 'bg-white shadow text-slate-800' }}">
+                        Manual
+                    </button>
+                </div>
                 <button type="button" id="pause-btn" onclick="sendPauseAction('pause')"
-                    class="{{ !$queueOperational || $queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
+                    class="{{ !$queueOperational || $queuePaused || ($autoPauseEnabled ?? true) ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 border border-yellow-300 text-yellow-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
                     <i class="bi bi-pause-fill"></i> Pause Queue
                 </button>
                 <button type="button" id="resume-btn" onclick="sendPauseAction('resume')"
-                    class="{{ !$queueOperational || !$queuePaused ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
+                    class="{{ !$queueOperational || !$queuePaused || ($autoPauseEnabled ?? true) ? 'hidden' : '' }} inline-flex items-center gap-1.5 bg-green-100 hover:bg-green-200 border border-green-300 text-green-700 text-[11px] font-bold px-3 py-1 rounded-full transition-colors disabled:opacity-40">
                     <i class="bi bi-play-fill"></i> Resume Queue
                 </button>
+                @else
+                <span id="pause-mode-label" class="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-500">
+                    {{ ($autoPauseEnabled ?? true) ? 'AUTO' : 'MANUAL' }}
+                </span>
+                @endif
                 <span id="queue-status-badge" class="inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full
                     {{ !$queueOperational ? 'bg-slate-100 text-slate-500' : ($queuePaused ? 'bg-yellow-50 text-yellow-700' : 'badge-live bg-green-50 text-green-700') }}">
                     <span class="w-1.5 h-1.5 rounded-full {{ !$queueOperational ? 'bg-slate-400' : ($queuePaused ? 'bg-yellow-500' : 'bg-green-500') }}"></span>
@@ -105,59 +121,84 @@
             </div>
         </div>
 
-        <div id="now-serving-panel">
-        @if($currentServing)
-            <div class="text-center py-4">
+        <div id="now-serving-panel" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        @forelse(($counters ?? collect())->where('is_active', true) as $counter)
+            @php
+                $serving = ($currentServings ?? collect())->firstWhere('counter_id', $counter->id);
+                $isBusy = (bool) $serving;
+                $isMine = $serving && auth()->user() && $serving->served_by === auth()->user()->id;
+            @endphp
+            <div class="border border-slate-200 rounded-2xl p-4 {{ $isBusy ? 'bg-white' : 'bg-slate-50' }}" data-counter-card="{{ $counter->id }}">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">{{ $counter->name }}</span>
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {{ $isBusy ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400' }}" data-counter-status="{{ $counter->id }}">
+                        {{ $isBusy ? 'SERVING' : 'IDLE' }}
+                    </span>
+                </div>
+                <div data-counter-body="{{ $counter->id }}">
+                @if($serving)
+                    <div class="text-center py-2">
+                        <div class="ticket-lg text-red-600 mb-2">{{ $serving->ticket_number }}</div>
+                        <div class="text-sm font-bold text-slate-800">{{ $serving->name }}</div>
+                        <div class="text-xs text-slate-400 mt-0.5">{{ $serving->purpose }}</div>
+                        <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                            <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
+                                <i class="bi bi-phone"></i> {{ $serving->phone_number }}
+                            </span>
+                            @if($serving->servedBy)
+                            <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-xs font-semibold px-3 py-1 rounded-full">
+                                <i class="bi bi-person"></i> {{ $serving->servedBy->name }}
+                            </span>
+                            @endif
+                        </div>
+                    </div>
+                    <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
+                        <form action="{{ route('admin.reject', $serving->id) }}" method="POST">
+                            @csrf
+                            <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                            <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                <i class="bi bi-skip-forward-fill"></i> Skip
+                            </button>
+                        </form>
+                        <form action="{{ route('admin.complete', $serving->id) }}" method="POST">
+                            @csrf
+                            <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                            <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                <i class="bi bi-check-lg"></i> Complete
+                            </button>
+                        </form>
+                    </div>
+                @else
+                    <div class="text-center py-6 text-slate-400">
+                        <div class="text-3xl mb-2">📭</div>
+                        <div class="text-xs font-semibold">No student at {{ $counter->name }}</div>
+                        @if(auth()->user()->role !== 'admin')
+                        <form action="{{ route('admin.callNext') }}" method="POST" class="mt-3">
+                            @csrf
+                            <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+                            <input type="hidden" name="counter_id" value="{{ $counter->id }}">
+                            <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="0" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
+                                class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                <i class="bi bi-play-circle-fill"></i> Call Next here
+                            </button>
+                        </form>
+                        @endif
+                    </div>
+                @endif
+                </div>
+            </div>
+        @empty
+            <div class="text-center py-10 text-slate-400 md:col-span-2">
+                <div class="text-5xl mb-3">📭</div>
+                <div class="text-base font-semibold">No active counters. Ask an admin to add counters.</div>
+            </div>
+        @endforelse
+        {{-- Legacy single-lane fallback (departments without counters seeded yet) --}}
+        @if(($counters ?? collect())->where('is_active', true)->isEmpty() && ($currentServing ?? null))
+            <div class="text-center py-4 md:col-span-2">
                 <div class="ticket-xl text-red-600 mb-3">{{ $currentServing->ticket_number }}</div>
                 <div class="text-lg font-bold text-slate-800">{{ $currentServing->name }}</div>
                 <div class="text-sm text-slate-400 mt-1">{{ $currentServing->purpose }}</div>
-                <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
-                    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
-                        <i class="bi bi-phone"></i> {{ $currentServing->phone_number }}
-                    </span>
-                    <span id="auto-skip-timer"
-                        class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full"
-                        data-served-at="{{ ($currentServing->served_at ?? $currentServing->updated_at)->timestamp }}">
-                        <i class="bi bi-clock"></i> <span id="auto-skip-label">--:--</span>
-                    </span>
-                </div>
-            </div>
-            <div class="border-t border-slate-100 pt-5 mt-2 flex flex-wrap gap-2 justify-center">
-                <form action="{{ route('admin.reject', $currentServing->id) }}" method="POST">
-                    @csrf
-                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                        <i class="bi bi-skip-forward-fill"></i> Skip / No Show
-                    </button>
-                </form>
-                <form action="{{ route('admin.complete', $currentServing->id) }}" method="POST">
-                    @csrf
-                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-department-active {{ !$queueOperational ? 'disabled' : '' }} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                        <i class="bi bi-check-lg"></i> Complete
-                    </button>
-                </form>
-                <form action="{{ route('admin.callNext') }}" method="POST">
-                    @csrf
-                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
-                        class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                        <i class="bi bi-arrow-right-circle-fill"></i> Call Next
-                    </button>
-                </form>
-            </div>
-        @else
-            <div class="text-center py-10">
-                <div class="text-5xl mb-3">📭</div>
-                <div class="text-base font-semibold text-slate-400">No student is currently being served</div>
-                <form action="{{ route('admin.callNext') }}" method="POST" class="mt-6 inline-block">
-                    @csrf
-                    <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
-                    <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
-                        class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white font-semibold px-6 py-3 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                        <i class="bi bi-play-circle-fill"></i> Call First Student
-                    </button>
-                </form>
             </div>
         @endif
         </div>{{-- #now-serving-panel --}}
@@ -244,14 +285,22 @@
 @section('scripts')
 <script>
     const TOGGLE_PAUSE_URL  = "{{ route('admin.togglePause') }}";
+    const PAUSE_MODE_URL = "{{ route('admin.pauseMode') }}";
     const CSRF_TOKEN        = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     const SELECTED_DEPARTMENT_ID = {{ $selectedDepartment?->id ?? 'null' }};
     const QUEUE_OPERATIONAL = {{ $queueOperational ? 'true' : 'false' }};
+    const IS_ADMIN_VIEWER = {{ auth()->user()->role === 'admin' ? 'true' : 'false' }};
     let   queueIsPaused     = {{ $queuePaused ? 'true' : 'false' }};
+    let   pauseMode = "{{ ($autoPauseEnabled ?? true) ? 'auto' : 'manual' }}";
     let   lunchBreakStart   = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }}";
     let   lunchBreakEnd     = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}";
 
     async function sendPauseAction(action) {
+        if (IS_ADMIN_VIEWER) return;
+        if (pauseMode !== 'manual') {
+            showToast('Switch to Manual mode to use Pause / Resume.', 'warning');
+            return;
+        }
         if (!SELECTED_DEPARTMENT_ID || !QUEUE_OPERATIONAL) return;
 
         const pauseBtn = document.getElementById('pause-btn');
@@ -295,7 +344,12 @@
         const bannerReason = document.getElementById('paused-banner-reason');
         const statusBadge  = document.getElementById('queue-status-badge');
 
-        if (QUEUE_OPERATIONAL) {
+        updatePauseModeUI(pauseMode);
+
+        if (IS_ADMIN_VIEWER) {
+            pauseBtn?.classList.add('hidden');
+            resumeBtn?.classList.add('hidden');
+        } else if (QUEUE_OPERATIONAL && pauseMode === 'manual') {
             pauseBtn?.classList.toggle('hidden', queueIsPaused);
             resumeBtn?.classList.toggle('hidden', !queueIsPaused);
         } else {
@@ -331,11 +385,11 @@
             button.disabled = !QUEUE_OPERATIONAL;
         });
         document.querySelectorAll('[data-queue-running]').forEach(button => {
-            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1';
+            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1' || button.dataset.current === '1';
         });
     }
 
-    function updatePauseResumeUI(isPaused, lbStart, lbEnd, pauseSource = 'manual') {
+    function updatePauseResumeUI(isPaused, lbStart, lbEnd, pauseSource = 'manual', mode = null) {
         const formatTime = value => {
             if (!value || !value.includes(':')) return value;
             const [hour, minute] = value.split(':').map(Number);
@@ -351,7 +405,61 @@
         if (schedule) schedule.innerText = `${lunchBreakStart} - ${lunchBreakEnd}`;
         if (endDisplay) endDisplay.innerText = lunchBreakEnd;
 
+        if (mode === 'auto' || mode === 'manual') {
+            pauseMode = mode;
+        }
+
         applyPauseState(isPaused, pauseSource === 'lunch' ? 'auto' : 'manual');
+    }
+
+    function updatePauseModeUI(mode) {
+        const autoBtn = document.getElementById('mode-auto-btn');
+        const manualBtn = document.getElementById('mode-manual-btn');
+        const modeLabel = document.getElementById('pause-mode-label');
+        const activeCls = ['bg-white', 'shadow', 'text-slate-800'];
+        const idleCls = ['text-slate-400'];
+
+        if (autoBtn && manualBtn) {
+            const isAuto = mode === 'auto';
+            autoBtn.classList.remove(...activeCls, ...idleCls);
+            manualBtn.classList.remove(...activeCls, ...idleCls);
+            autoBtn.classList.add(...(isAuto ? activeCls : idleCls));
+            manualBtn.classList.add(...(isAuto ? idleCls : activeCls));
+        }
+        if (modeLabel) {
+            modeLabel.innerText = mode === 'auto' ? 'AUTO' : 'MANUAL';
+        }
+    }
+
+    async function sendPauseMode(mode) {
+        if (IS_ADMIN_VIEWER) return;
+        if (!SELECTED_DEPARTMENT_ID) return;
+        if (mode !== 'auto' && mode !== 'manual') return;
+
+        try {
+            const res = await fetch(PAUSE_MODE_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': CSRF_TOKEN,
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ mode, department_id: SELECTED_DEPARTMENT_ID }),
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Unable to update pause mode.');
+            }
+
+            pauseMode = data.pause_mode;
+            updatePauseModeUI(pauseMode);
+            applyPauseState(data.queue_paused, 'manual');
+            showToast(data.message, 'success');
+        } catch (e) {
+            showToast(e.message || 'Failed to update pause mode.', 'warning');
+        }
     }
 
     // ── Auto-skip countdown timer ─────────────────────────────────────────────

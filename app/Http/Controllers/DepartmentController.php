@@ -13,7 +13,7 @@ class DepartmentController extends Controller
 {
     public function index()
     {
-        $departments = Department::with(['staff' => fn ($query) => $query->orderBy('name')])
+        $departments = Department::with(['staff' => fn ($query) => $query->orderBy('name'), 'counters' => fn ($query) => $query->orderBy('name')])
             ->withCount('queueEntries')
             ->orderBy('name')
             ->get();
@@ -25,9 +25,14 @@ class DepartmentController extends Controller
     {
         $validated = $request->validate([
             'department_name' => 'required|string|max:255|unique:departments,name',
+            'counters' => 'nullable|integer|min:1|max:20',
         ]);
 
-        Department::create(['name' => $validated['department_name']]);
+        $department = Department::create(['name' => $validated['department_name']]);
+        $count = $validated['counters'] ?? 1;
+        for ($i = 1; $i <= $count; $i++) {
+            $department->counters()->create(['name' => "Window {$i}"]);
+        }
 
         return back()->with('success', 'Department added successfully.');
     }
@@ -101,5 +106,44 @@ class DepartmentController extends Controller
         return back()->with('success', $staff->is_active
             ? 'Staff account activated successfully.'
             : 'Staff account deactivated successfully.');
+    }
+
+    public function storeCounter(Request $request)
+    {
+        $validated = $request->validate([
+            'department_id' => 'required|integer|exists:departments,id',
+            'name' => 'required|string|max:255',
+        ]);
+
+        $department = Department::findOrFail($validated['department_id']);
+        $department->counters()->create(['name' => $validated['name']]);
+
+        return back()->with('success', "Counter added to {$department->name}.");
+    }
+
+    public function updateCounterStatus(Request $request, \App\Models\Counter $counter)
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+        ]);
+
+        $isActive = (bool) $validated['is_active'];
+
+        if (! $isActive) {
+            $busy = QueueEntry::where('counter_id', $counter->id)
+                ->whereDate('queue_date', today())
+                ->where('status', 'serving')
+                ->exists();
+
+            if ($busy) {
+                return back()->with('warning', "{$counter->name} is currently serving and cannot be deactivated.");
+            }
+        }
+
+        $counter->update(['is_active' => $isActive]);
+
+        return back()->with('success', $isActive
+            ? "{$counter->name} activated."
+            : "{$counter->name} deactivated.");
     }
 }
