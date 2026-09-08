@@ -1,66 +1,75 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ACLC Mandaue — Queuing System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Department-based queue management with multi-counter serving, realtime updates, OTP verification, and TV display.
 
-## About Laravel
+## Features
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Student / Guest queue** — join per department, one active ticket per day, duplicate prevention
+- **Multi-counter serving (Phase 2)** — each department has its own front desks
+  (e.g. Admission = 4 windows, Cashier = 2). Each counter serves one ticket at a time,
+  staff claims the next waiting ticket to a free counter. One staff = one serving at a time.
+- **Auto / Manual pause mode (per department)**
+  - `Auto` — lunch-break scheduler pauses/resumes, manual Pause/Resume hidden
+  - `Manual` — staff controls Pause/Resume, lunch auto disabled for that department
+- **Staff / Admin roles** — staff locked to one department, admin oversees all + audit log + reports (PDF)
+- **Realtime** — Pusher (`queue.{department_id}` → `queue.updated`) with 5-second polling fallback
+- **TV display** — Now Serving grid per counter + Next + Waiting list
+- **Auto-skip** — unresponsive `serving` tickets auto-skip after 3 minutes and refill free counters
+- **Phone OTP** (Textbee) — verification + resend limits, log fallback for local dev
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Tech Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Laravel 9 · PHP 8.2 · MySQL · Pusher Channels · Textbee SMS · Tailwind CSS · Blade
 
-## Learning Laravel
+## Quick Start
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+```bash
+cp .env.example .env
+# set DB_*, PUSHER_*, TEXTBEE_API_KEY / TEXTBEE_DEVICE_ID (see QUICK_START.md)
+php artisan migrate
+php artisan db:seed --class=PurposeSeeder   # optional
+php artisan serve
+```
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+Scheduler (lunch auto-pause + auto-skip) — every minute:
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 2000 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+```bash
+php artisan schedule:work
+# runs queue:lunch-break + queue:auto-skip
+```
 
-## Laravel Sponsors
+See `QUICK_START.md` for Pusher/Textbee keys and test flows,
+`IMPLEMENTATION_NOTES.md` for earlier implementation details.
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+## Counters
 
-### Premium Partners
+- Admin → **Departments & Staff** → set number of windows on create (1–20),
+  add more or toggle Active/Off per counter. A busy counter cannot be deactivated.
+- Staff dashboard → **Now Serving** cards per counter → `Call Next here`,
+  `Skip` / `Complete` per ticket. Realtime sync via `/admin/waiting-list`.
+- TV (`/tv?department_id=`) shows the serving grid per window.
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[Many](https://www.many.co.uk)**
-- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
-- **[DevSquad](https://devsquad.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[OP.GG](https://op.gg)**
-- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
-- **[Lendio](https://lendio.com)**
+## Key Routes
 
-## Contributing
+| Method | URI | Name |
+|---|---|---|
+| GET | `/`, `/tv` | `home`, `tv` |
+| POST | `/queue` | `queue.store` |
+| GET | `/admin`, `/admin/queue` | `admin.index`, `admin.queue` |
+| POST | `/admin/call-next` (`counter_id?`) | `admin.callNext` |
+| POST | `/admin/reject/{id}`, `/admin/accept/{id}` | `admin.reject`, `admin.complete` |
+| POST | `/admin/toggle-pause` | `admin.togglePause` |
+| POST | `/admin/pause-mode` (`auto\|manual`) | `admin.pauseMode` |
+| POST | `/admin/counters`, `PATCH /admin/counters/{counter}/status` | `admin.counters.*` |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Tests
 
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```bash
+php artisan test
+# includes: multi-counter concurrent serving, pause/mode audit, auto-skip locking path
+# known pre-existing failure: GuestQueueFlowTest private-register route (commented out in routes)
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Internal academic project (ACLC Mandaue). Laravel framework portions under MIT.
