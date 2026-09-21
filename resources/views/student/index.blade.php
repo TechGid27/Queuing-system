@@ -353,10 +353,15 @@
         }
     }
 
-    if (window.Echo && departmentId) {
+    var echoAttached = false;
+    function attachRealtime() {
+        if (echoAttached || !window.Echo || !departmentId) return;
+        echoAttached = true;
         window.Echo.channel(`queue.${departmentId}`).listen('.queue.updated', refreshQueueStatus);
         window.Echo.channel('purposes').listen('.purposes.updated', renderPurposes);
     }
+    attachRealtime();
+    window.addEventListener('echo:ready', attachRealtime);
 
     const initialPurposeSelect = document.querySelector('select[name="purpose_id"]');
     if (initialPurposeSelect) handlePurposeChange(initialPurposeSelect);

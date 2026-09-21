@@ -91,18 +91,22 @@ class StaffController extends Controller
     ): void {
         $query = QueueEntry::where('department_id', $departmentId)
             ->whereDate('queue_date', today());
-        $servingCount = (clone $query)->where('status', 'serving')->count();
-        $firstServing = (clone $query)->where('status', 'serving')->orderBy('id')->first();
-        $current = $firstServing?->ticket_number ?? 'Waiting';
+        // Optimized: 2 queries instead of 4 (reuse collections in PHP).
+        $servings = (clone $query)->where('status', 'serving')->orderBy('id')->get(['id', 'ticket_number']);
+        $waitings = (clone $query)->where('status', 'waiting')->orderBy('id')->get(['id', 'ticket_number']);
+        $current = $servings->first()?->ticket_number ?? 'Waiting';
 
-        if ($servingCount > 0) {
+        if ($servings->isNotEmpty()) {
             Cache::forever($this->currentCacheKey($departmentId), $current);
         } else {
             Cache::forget($this->currentCacheKey($departmentId));
         }
 
-        $nextPerson = (clone $query)->where('status', 'waiting')->orderBy('id')->first();
-        $waitingCount = (clone $query)->where('status', 'waiting')->count();
+        $nextPerson = $waitings->first();
+        $waitingCount = $waitings->count();
+
+        // Invalidate the short-lived polling cache so next poll is fresh.
+        Cache::forget("queue_status_dept_{$departmentId}");
 
         event(new QueueUpdated(
             $departmentId,
@@ -448,20 +452,23 @@ class StaffController extends Controller
             return 5.0;
         }
 
-        $completed = QueueEntry::where('department_id', $departmentId)
-            ->whereDate('queue_date', today())
-            ->where('status', 'completed')
-            ->whereNotNull('served_at')
-            ->whereNotNull('completed_at')
-            ->get(['served_at', 'completed_at']);
+        // Cached 60s: avoids loading all completed rows on every page + poll request.
+        return Cache::remember("avg_serve_mins_{$departmentId}_" . today()->toDateString(), 60, function () use ($departmentId) {
+            $completed = QueueEntry::where('department_id', $departmentId)
+                ->whereDate('queue_date', today())
+                ->where('status', 'completed')
+                ->whereNotNull('served_at')
+                ->whereNotNull('completed_at')
+                ->get(['served_at', 'completed_at']);
 
-        if ($completed->count() < 2) {
-            return 5.0;
-        }
+            if ($completed->count() < 2) {
+                return 5.0;
+            }
 
-        $totalSeconds = $completed->sum(fn ($entry) => $entry->completed_at->diffInSeconds($entry->served_at));
+            $totalSeconds = $completed->sum(fn ($entry) => $entry->completed_at->diffInSeconds($entry->served_at));
 
-        return round(max(1, min(30, ($totalSeconds / $completed->count()) / 60)), 1);
+            return round(max(1, min(30, ($totalSeconds / $completed->count()) / 60)), 1);
+        });
     }
 
     public function reports(Request $request)

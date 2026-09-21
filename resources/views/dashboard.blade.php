@@ -128,9 +128,14 @@ async function refreshPublicQueue() {
     }
 }
 
-if (window.Echo && departmentId) {
+var echoAttached = false;
+function attachRealtime() {
+    if (echoAttached || !window.Echo || !departmentId) return;
+    echoAttached = true;
     window.Echo.channel(`queue.${departmentId}`).listen('.queue.updated', renderPublicQueue);
 }
+attachRealtime();
+window.addEventListener('echo:ready', attachRealtime);
 
 refreshPublicQueue();
 setInterval(refreshPublicQueue, 5000);
