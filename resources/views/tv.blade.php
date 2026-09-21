@@ -9,6 +9,9 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
     <link rel="apple-touch-icon"              href="/favicon/apple-touch-icon.png">
     <link rel="manifest"                      href="/favicon/site.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -24,7 +27,7 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js" defer></script>
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
@@ -342,7 +345,8 @@ async function refreshQueueState() {
     }
 }
 
-if (window.PUSHER_APP_KEY && departmentId) {
+function attachTvRealtime() {
+if (window.PUSHER_APP_KEY && departmentId && window.Pusher) {
     const options = {
         cluster: window.PUSHER_APP_CLUSTER || 'mt1',
         forceTLS: window.PUSHER_SCHEME === 'https',
@@ -369,6 +373,10 @@ if (window.PUSHER_APP_KEY && departmentId) {
     });
     pusher.subscribe(`queue.${departmentId}`).bind('queue.updated', renderQueueState);
 }
+}
+
+attachTvRealtime();
+window.addEventListener('load', attachTvRealtime);
 
 refreshQueueState();
 setInterval(refreshQueueState, 5000);

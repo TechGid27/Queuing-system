@@ -192,12 +192,17 @@
             .catch(() => {});
     }
 
-    if (window.Echo && SELECTED_DEPARTMENT_ID) {
+    var echoAttached = false;
+    function attachRealtime() {
+        if (echoAttached || !window.Echo || !SELECTED_DEPARTMENT_ID) return;
+        echoAttached = true;
         // Reuse the existing Echo instance from layout — no duplicate connection
         window.Echo.channel(`queue.${SELECTED_DEPARTMENT_ID}`).listen('.queue.updated', function(data) {
             refreshDashboard();
         });
     }
+    attachRealtime();
+    window.addEventListener('echo:ready', attachRealtime);
 
     refreshDashboard();
     setInterval(refreshDashboard, 5000);

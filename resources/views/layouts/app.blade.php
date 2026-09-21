@@ -10,6 +10,9 @@
     <link rel="icon" type="image/png" sizes="32x32"  href="/favicon/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180"     href="/favicon/apple-touch-icon.png">
     <link rel="manifest"                             href="/favicon/site.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -26,34 +29,42 @@
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js"></script>
+    {{-- Deferred: realtime libs must not block first paint. Echo init runs on window load. --}}
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.3/dist/echo.iife.js" defer></script>
     <script>
         window.PUSHER_APP_KEY     = "{{ config('broadcasting.connections.pusher.key') }}";
         window.PUSHER_APP_CLUSTER = "{{ config('broadcasting.connections.pusher.options.cluster') }}";
         window.PUSHER_HOST        = "{{ config('broadcasting.connections.pusher.options.host', '') }}";
         window.PUSHER_PORT        = "{{ config('broadcasting.connections.pusher.options.port', 443) }}";
         window.PUSHER_SCHEME      = "{{ config('broadcasting.connections.pusher.options.scheme', 'https') }}";
-        
-        const EchoClient = window.Echo;
-        window.Echo = null;
-        if (window.Pusher && EchoClient && window.PUSHER_APP_KEY) {
-            const echoOptions = {
-                broadcaster: 'pusher',
-                key: window.PUSHER_APP_KEY,
-                cluster: window.PUSHER_APP_CLUSTER,
-                forceTLS: window.PUSHER_SCHEME === 'https',
-            };
 
-            if (window.PUSHER_HOST) {
-                echoOptions.wsHost = window.PUSHER_HOST;
-                echoOptions.wsPort = Number(window.PUSHER_PORT);
-                echoOptions.wssPort = Number(window.PUSHER_PORT);
-                echoOptions.enabledTransports = ['ws', 'wss'];
+        // Runs after deferred Pusher/Echo scripts have loaded.
+        window.addEventListener('load', function () {
+            var EchoClient = (typeof window.Echo === 'function') ? window.Echo : window.LaravelEcho;
+            window.Echo = null;
+            if (window.Pusher && EchoClient && window.PUSHER_APP_KEY) {
+                var echoOptions = {
+                    broadcaster: 'pusher',
+                    key: window.PUSHER_APP_KEY,
+                    cluster: window.PUSHER_APP_CLUSTER,
+                    forceTLS: window.PUSHER_SCHEME === 'https',
+                };
+
+                if (window.PUSHER_HOST) {
+                    echoOptions.wsHost = window.PUSHER_HOST;
+                    echoOptions.wsPort = Number(window.PUSHER_PORT);
+                    echoOptions.wssPort = Number(window.PUSHER_PORT);
+                    echoOptions.enabledTransports = ['ws', 'wss'];
+                }
+
+                try {
+                    window.Echo = new EchoClient(echoOptions);
+                    // Notify polling fallbacks that realtime is ready (they can skip/shorten polling).
+                    window.dispatchEvent(new CustomEvent('echo:ready'));
+                } catch (e) { window.Echo = null; }
             }
-
-            window.Echo = new EchoClient(echoOptions);
-        }
+        });
     </script>
     <style>
         body { font-family: 'Inter', sans-serif; }

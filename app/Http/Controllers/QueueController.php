@@ -52,13 +52,15 @@ class QueueController extends Controller
         $baseQuery = QueueEntry::where('department_id', $department->id)
             ->whereDate('queue_date', today());
 
-        $currentServing = (clone $baseQuery)->where('status', 'serving')->orderBy('id')->first();
-        $currentNumber = $currentServing?->ticket_number ?? '--';
+        // Optimized: 3 queries instead of 5.
+        // 1) serving list (reuses first + count in PHP), 2) waiting count, 3) waiting top-8.
         $currentServings = (clone $baseQuery)
             ->where('status', 'serving')
             ->with(['counter', 'servedBy'])
             ->orderBy('id')
             ->get();
+        $currentServing = $currentServings->first();
+        $currentNumber = $currentServing?->ticket_number ?? '--';
 
         if ($currentServing) {
             Cache::forever($this->currentCacheKey($department->id), $currentNumber);
@@ -66,23 +68,25 @@ class QueueController extends Controller
             Cache::forget($this->currentCacheKey($department->id));
         }
 
-        $nextPerson = (clone $baseQuery)->where('status', 'waiting')
-            ->orderBy('id', 'asc')
-            ->first();
+        $waitingCount = (clone $baseQuery)->where('status', 'waiting')->count();
+        $waitingList = (clone $baseQuery)->where('status', 'waiting')->orderBy('id')->take(8)->get();
+        $nextNumber = $waitingList->first()?->ticket_number ?? 'Waiting';
 
         return [
             'currentNumber' => $currentNumber,
             'currentServing' => $currentServing,
             'currentServings' => $currentServings,
             'servingCount' => $currentServings->count(),
-            'nextNumber' => $nextPerson?->ticket_number ?? 'Waiting',
-            'waitingCount' => (clone $baseQuery)->where('status', 'waiting')->count(),
-            'waitingList' => (clone $baseQuery)->where('status', 'waiting')->orderBy('id')->take(8)->get(),
+            'nextNumber' => $nextNumber,
+            'waitingCount' => $waitingCount,
+            'waitingList' => $waitingList,
         ];
     }
 
     private function broadcastQueueState(int $departmentId): void
     {
+        // Invalidate the short-lived polling cache so next poll is fresh.
+        Cache::forget("queue_status_dept_{$departmentId}");
         $department = Department::findOrFail($departmentId);
         $state = $this->queueState($department);
 
@@ -176,7 +180,35 @@ class QueueController extends Controller
             }
         }
 
-        $state = $this->queueState($selectedDepartment);
+        // Hot polling path (every 5s per open tab): cache the shared
+        // department state for 3s so parallel polls skip all DB queries.
+        // Per-guest `my_ticket` is computed below and never cached.
+        $cacheKey = 'queue_status_dept_' . ($selectedDepartment?->id ?? 'none');
+        $payload = Cache::remember($cacheKey, 3, function () use ($selectedDepartment) {
+            $state = $this->queueState($selectedDepartment);
+
+            return [
+                'department_id' => $selectedDepartment?->id,
+                'department_name' => $selectedDepartment?->name,
+                'current' => $state['currentNumber'],
+                'next' => $state['nextNumber'],
+                'waiting_count' => $state['waitingCount'],
+                'waiting_list' => $state['waitingList']->map(fn ($entry, $index) => [
+                    'ticket_number' => $entry->ticket_number,
+                    'position' => $index + 1,
+                ])->values(),
+                'current_serving' => $state['currentServing'] ? [
+                    'ticket_number' => $state['currentServing']->ticket_number,
+                ] : null,
+                'current_servings' => $state['currentServings']->map(fn ($s) => [
+                    'ticket_number' => $s->ticket_number,
+                    'counter_name' => $s->counter?->name,
+                ])->values(),
+                'serving_count' => $state['servingCount'],
+                'queue_paused' => (bool) $selectedDepartment?->queue_paused,
+                'avg_serve_mins' => \App\Http\Controllers\StaffController::getAvgServeMinutes($selectedDepartment?->id),
+            ];
+        });
         $myTicket = null;
 
         if ($guest && $selectedDepartment) {
@@ -203,28 +235,9 @@ class QueueController extends Controller
             }
         }
 
-        return response()->json([
-            'department_id' => $selectedDepartment?->id,
-            'department_name' => $selectedDepartment?->name,
-            'current' => $state['currentNumber'],
-            'next' => $state['nextNumber'],
-            'waiting_count' => $state['waitingCount'],
-            'waiting_list' => $state['waitingList']->map(fn ($entry, $index) => [
-                'ticket_number' => $entry->ticket_number,
-                'position' => $index + 1,
-            ])->values(),
-            'current_serving' => $state['currentServing'] ? [
-                'ticket_number' => $state['currentServing']->ticket_number,
-            ] : null,
-            'current_servings' => $state['currentServings']->map(fn ($s) => [
-                'ticket_number' => $s->ticket_number,
-                'counter_name' => $s->counter?->name,
-            ])->values(),
-            'serving_count' => $state['servingCount'],
+        return response()->json(array_merge($payload, [
             'my_ticket' => $myTicket,
-            'queue_paused' => (bool) $selectedDepartment?->queue_paused,
-            'avg_serve_mins' => \App\Http\Controllers\StaffController::getAvgServeMinutes($selectedDepartment?->id),
-        ]);
+        ]));
     }
 
     // ─── Store (Join Queue) ───────────────────────────────────────────────────
