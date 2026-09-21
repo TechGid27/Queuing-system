@@ -82,19 +82,6 @@ php artisan schedule:work
 >   artisan serve
 > ```
 
-### Default accounts
-
-Seeded by `AdminSeeder` (safe to re-run — `updateOrCreate` by email):
-
-| Role | Email | Password |
-|---|---|---|
-| Admin | `admin@aclc.edu.ph` | `Admin1234` |
-
-Override via `.env`: `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE`.
-
-Students/guests self-register at `/verify` (needs a real `09XXXXXXXXX` number for
-OTP, or read the OTP from `storage/logs/laravel.log` in dev).
-
 ### Getting API keys
 
 - **Pusher** (realtime): [pusher.com](https://pusher.com) → Channels app (free:
