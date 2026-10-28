@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Counter;
 use App\Models\Department;
 use App\Models\QueueAction;
 use App\Models\QueueEntry;
@@ -128,8 +129,20 @@ class QueueTransitionService
                 return null;
             }
 
+            // Tickets being served at a paused counter are not auto-skipped.
+            $pausedCounterIds = Counter::where('department_id', $lockedDepartment->id)
+                ->where('queue_paused', true)
+                ->pluck('id')
+                ->all();
+
             $expired = $this->todayQueue($lockedDepartment)
                 ->where('status', 'serving')
+                ->when($pausedCounterIds, function ($query) use ($pausedCounterIds) {
+                    $query->where(function ($inner) use ($pausedCounterIds) {
+                        $inner->whereNull('counter_id')
+                            ->orWhereNotIn('counter_id', $pausedCounterIds);
+                    });
+                })
                 ->where(function ($query) {
                     $query->where('served_at', '<', now()->subMinutes(3))
                         ->orWhere(function ($fallback) {
@@ -221,6 +234,76 @@ class QueueTransitionService
         });
     }
 
+    public function setCounterPaused(Counter $counter, bool $paused, ?User $actor = null, string $source = 'manual'): Counter
+    {
+        return DB::transaction(function () use ($counter, $paused, $actor, $source) {
+            $lockedCounter = Counter::whereKey($counter->id)->lockForUpdate()->firstOrFail();
+
+            if (! $lockedCounter->is_active) {
+                throw new \LogicException('Activate this counter before changing its pause status.');
+            }
+
+            $department = $this->lockDepartmentById((int) $lockedCounter->department_id);
+
+            if (! $department->is_active) {
+                throw new \LogicException('Activate this department before changing its queue status.');
+            }
+
+            $wasPaused = (bool) $lockedCounter->queue_paused;
+            $lockedCounter->update([
+                'queue_paused' => $paused,
+                'lunch_break_paused' => $source === 'lunch' ? $paused : false,
+            ]);
+
+            if ($wasPaused !== $paused) {
+                $this->record(
+                    action: $paused ? 'counter_paused' : 'counter_resumed',
+                    department: $department,
+                    actor: $actor,
+                    metadata: ['counter_id' => $lockedCounter->id, 'counter_name' => $lockedCounter->name, 'source' => $source]
+                );
+            }
+
+            return $lockedCounter->fresh();
+        });
+    }
+
+    public function setCounterPauseMode(Counter $counter, bool $auto, ?User $actor = null): Counter
+    {
+        return DB::transaction(function () use ($counter, $auto, $actor) {
+            $lockedCounter = Counter::whereKey($counter->id)->lockForUpdate()->firstOrFail();
+            $department = $this->lockDepartmentById((int) $lockedCounter->department_id);
+
+            if (! $department->is_active) {
+                throw new \LogicException('Activate this department before changing its queue status.');
+            }
+
+            $wasAuto = (bool) $lockedCounter->auto_pause_enabled;
+            $lockedCounter->update(['auto_pause_enabled' => $auto]);
+
+            if (! $auto && $lockedCounter->lunch_break_paused) {
+                $lockedCounter->update(['lunch_break_paused' => false]);
+                $lockedCounter->refresh();
+            }
+
+            if ($wasAuto !== $auto) {
+                $this->record(
+                    action: 'counter_pause_mode_changed',
+                    department: $department,
+                    actor: $actor,
+                    metadata: [
+                        'counter_id' => $lockedCounter->id,
+                        'counter_name' => $lockedCounter->name,
+                        'from' => $wasAuto ? 'auto' : 'manual',
+                        'to' => $auto ? 'auto' : 'manual',
+                    ]
+                );
+            }
+
+            return $lockedCounter->fresh();
+        });
+    }
+
     private function resolveFreeCounter(Department $lockedDepartment, ?int $counterId = null): \App\Models\Counter
     {
         $busyCounterIds = $this->todayQueue($lockedDepartment)
@@ -237,6 +320,10 @@ class QueueTransitionService
 
             abort_unless($counter && $counter->is_active, 404, 'Counter not available.');
 
+            if ($counter->queue_paused) {
+                throw new \LogicException("{$counter->name} is paused. Resume it before calling the next student.");
+            }
+
             if (in_array($counter->id, $busyCounterIds, true)) {
                 throw new \LogicException("{$counter->name} is already serving. Choose another counter.");
             }
@@ -246,17 +333,28 @@ class QueueTransitionService
 
         $counter = \App\Models\Counter::where('department_id', $lockedDepartment->id)
             ->where('is_active', true)
+            ->where('queue_paused', false)
             ->whereNotIn('id', $busyCounterIds ?: [0])
             ->orderBy('id')
             ->lockForUpdate()
             ->first();
 
-        // Backward compat: departments without counters get a default one.
-        $counter ??= \App\Models\Counter::create([
-            'department_id' => $lockedDepartment->id,
-            'name' => 'Window 1',
-            'is_active' => true,
-        ]);
+        if (! $counter) {
+            // Only create a default counter for legacy departments that have
+            // none. If counters exist but are all busy, do not attempt a
+            // duplicate "Window 1" insert (unique department/name constraint).
+            $hasCounters = \App\Models\Counter::where('department_id', $lockedDepartment->id)->exists();
+
+            if ($hasCounters) {
+                throw new \LogicException('All counters are currently serving. Complete or skip a ticket before calling the next student.');
+            }
+
+            $counter = \App\Models\Counter::create([
+                'department_id' => $lockedDepartment->id,
+                'name' => 'Window 1',
+                'is_active' => true,
+            ]);
+        }
 
         // Legacy rows without counter_id occupy the default counter.
         $legacyServing = $this->todayQueue($lockedDepartment)
@@ -282,6 +380,7 @@ class QueueTransitionService
 
         return \App\Models\Counter::where('department_id', $lockedDepartment->id)
             ->where('is_active', true)
+            ->where('queue_paused', false)
             ->whereNotIn('id', $busyCounterIds ?: [0])
             ->orderBy('id')
             ->lockForUpdate()
@@ -306,7 +405,7 @@ class QueueTransitionService
     private function todayQueue(Department $department)
     {
         return QueueEntry::where('department_id', $department->id)
-            ->whereDate('queue_date', today());
+            ->where('queue_date', today()->toDateString());
     }
 
     private function ensureOperational(Department $department): void

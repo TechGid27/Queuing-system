@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class QueueEntry extends Model
 {
@@ -61,4 +62,15 @@ class QueueEntry extends Model
         'completed_at' => 'datetime',
         'queue_date' => 'date',
     ];
+
+    /**
+     * Always persist queue_date as a date-only string so indexed comparisons
+     * (where queue_date = 'YYYY-MM-DD') work consistently across databases.
+     */
+    public function setQueueDateAttribute($value): void
+    {
+        $this->attributes['queue_date'] = $value
+            ? Carbon::parse($value)->toDateString()
+            : null;
+    }
 }

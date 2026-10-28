@@ -128,6 +128,22 @@
                 </div>
 
                 <div class="label-tag text-blue-300 mb-6">Now Serving</div>
+
+                @if(($counters ?? collect())->isNotEmpty())
+                <div id="tv-serving-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
+                    @foreach($counters as $counter)
+                        @php $serving = ($currentServings ?? collect())->firstWhere('counter_id', $counter->id); @endphp
+                        <div class="bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center transition-opacity {{ $counter->queue_paused ? 'opacity-60' : '' }}"
+                             data-tv-counter="{{ $counter->id }}">
+                            <div class="text-xs font-bold tracking-widest text-blue-200 uppercase mb-2">{{ $counter->name }}</div>
+                            <div class="text-5xl font-black text-white tabular-nums leading-none" data-tv-counter-ticket>{{ $serving?->ticket_number ?? '—' }}</div>
+                            <div data-tv-counter-paused class="{{ $counter->queue_paused ? '' : 'hidden' }} mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-yellow-300">
+                                <i class="bi bi-pause-fill"></i> PAUSED
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+                @else
                 <div class="ticket-now text-white text-center" id="tv-current">{{ $currentNumber }}</div>
                 <div id="tv-serving-grid" class="mt-6 flex items-stretch justify-center gap-3 flex-wrap max-w-3xl">
                     @forelse(($currentServings ?? collect()) as $serving)
@@ -139,6 +155,7 @@
                     <div class="text-slate-300/70 text-sm font-medium" id="tv-serving-empty">Waiting for next ticket…</div>
                     @endforelse
                 </div>
+                @endif
                 <div class="mt-8 flex items-center gap-2 bg-white/10 px-5 py-2 rounded-full">
                     <i class="bi bi-bell-fill text-yellow-300 text-sm"></i>
                     <span class="text-white/80 text-sm font-medium">Please proceed to the window</span>
@@ -283,28 +300,51 @@ function renderQueueState(data) {
         current.innerText = data.current;
         flashEl(current);
     }
-    if (servingGrid && (data.current_servings !== undefined || data.current_serving !== undefined)) {
+    if (servingGrid && (data.counters !== undefined || data.current_servings !== undefined || data.current_serving !== undefined)) {
+        const counters = data.counters ?? [];
         const list = data.current_servings ?? (data.current_serving ? [data.current_serving] : []);
-        servingGrid.replaceChildren();
-        if (!list.length) {
-            const empty = document.createElement('div');
-            empty.className = 'text-slate-300/70 text-sm font-medium';
-            empty.textContent = 'Waiting for next ticket…';
-            servingGrid.appendChild(empty);
-        } else {
-            list.slice(0, 8).forEach(s => {
-                const card = document.createElement('div');
-                card.className = 'bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center min-w-[120px]';
-                const label = document.createElement('div');
-                label.className = 'text-[10px] font-bold tracking-widest text-blue-200 uppercase';
-                label.textContent = String(s.counter_name ?? 'Window');
-                const num = document.createElement('div');
-                num.className = 'text-2xl font-black text-white tabular-nums';
-                num.textContent = String(s.ticket_number ?? '');
-                card.append(label, num);
-                servingGrid.appendChild(card);
+
+        if (counters.length > 0) {
+            const byCounter = {};
+            list.forEach(s => { if (s.counter_id) byCounter[String(s.counter_id)] = s; });
+
+            counters.forEach(c => {
+                const card = servingGrid.querySelector(`[data-tv-counter="${c.id}"]`);
+                if (!card) return;
+                const ticketEl = card.querySelector('[data-tv-counter-ticket]');
+                const pausedEl = card.querySelector('[data-tv-counter-paused]');
+                const serving = byCounter[String(c.id)];
+                const ticket = serving ? String(serving.ticket_number ?? '') : '—';
+
+                if (ticketEl && ticketEl.innerText !== ticket) {
+                    ticketEl.innerText = ticket;
+                    if (serving) flashEl(ticketEl);
+                }
+                pausedEl?.classList.toggle('hidden', !c.queue_paused);
+                card.classList.toggle('opacity-60', !!c.queue_paused);
             });
-            flashEl(servingGrid);
+        } else {
+            servingGrid.replaceChildren();
+            if (!list.length) {
+                const empty = document.createElement('div');
+                empty.className = 'text-slate-300/70 text-sm font-medium';
+                empty.textContent = 'Waiting for next ticket…';
+                servingGrid.appendChild(empty);
+            } else {
+                list.slice(0, 8).forEach(s => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white/10 border border-white/10 rounded-2xl px-5 py-3 text-center min-w-[120px]';
+                    const label = document.createElement('div');
+                    label.className = 'text-[10px] font-bold tracking-widest text-blue-200 uppercase';
+                    label.textContent = String(s.counter_name ?? 'Window');
+                    const num = document.createElement('div');
+                    num.className = 'text-2xl font-black text-white tabular-nums';
+                    num.textContent = String(s.ticket_number ?? '');
+                    card.append(label, num);
+                    servingGrid.appendChild(card);
+                });
+                flashEl(servingGrid);
+            }
         }
     }
 

@@ -128,6 +128,12 @@ window.Echo.channel('purposes')
         }
     });
 
+function escapeHtml(value) {
+    const element = document.createElement('div');
+    element.textContent = value == null ? '' : String(value);
+    return element.innerHTML;
+}
+
 function updatePurposesTable(purposes) {
     const tbody = document.querySelector('tbody');
     if (!tbody) return;
@@ -159,7 +165,7 @@ function updatePurposesTable(purposes) {
         });
         
         row.innerHTML = `
-            <td class="px-5 py-3.5 font-semibold text-slate-800">${purpose.name}</td>
+            <td class="px-5 py-3.5 font-semibold text-slate-800">${escapeHtml(purpose.name)}</td>
             <td class="px-5 py-3.5">
                 ${purpose.is_active ? 
                     '<span class="inline-flex items-center gap-1 bg-green-100 text-green-700 text-xs font-semibold px-2.5 py-1 rounded-full"><i class="bi bi-check-circle-fill"></i> Active</span>' :
@@ -177,7 +183,7 @@ function updatePurposesTable(purposes) {
                             ${purpose.is_active ? 'Deactivate' : 'Activate'}
                         </button>
                     </form>
-                    <form action="/admin/purposes/${purpose.id}" method="POST" onsubmit="return confirm('Delete \'${purpose.name.replace(/'/g, "\\'")}\'?')">
+                    <form action="/admin/purposes/${purpose.id}" method="POST" onsubmit="return confirm('Delete this purpose?')">
                         <input type="hidden" name="_token" value="${document.querySelector('meta[name="csrf-token"]').getAttribute('content')}">
                         <input type="hidden" name="_method" value="DELETE">
                         <button type="submit" class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors">

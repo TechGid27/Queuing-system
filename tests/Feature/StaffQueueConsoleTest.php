@@ -28,6 +28,8 @@ class StaffQueueConsoleTest extends TestCase
             ->assertOk()
             ->assertSee('Queue Console')
             ->assertSee('Window 1')
+            ->assertSee('My window')
+            ->assertSee('Focus window')
             ->assertSee('001')
             ->assertSee('Skip')
             ->assertSee('Complete');
@@ -54,10 +56,10 @@ class StaffQueueConsoleTest extends TestCase
         $department = Department::where('name', 'Cashier')->firstOrFail();
         $staff = $this->createStaff($department);
         $waiting = $this->createEntry($department, '002', 'waiting');
-        $this->mock(SmsService::class, function (MockInterface $mock) use ($waiting) {
+        $this->mock(SmsService::class, function (MockInterface $mock) use ($waiting, $department) {
             $mock->shouldReceive('sendNowServingNotification')
                 ->once()
-                ->with($waiting->phone_number, $waiting->ticket_number);
+                ->with($waiting->phone_number, $waiting->ticket_number, $department->name);
         });
 
         $this->actingAs($staff, 'web')
@@ -124,6 +126,95 @@ class StaffQueueConsoleTest extends TestCase
         $this->actingAs($staffA, 'web')
             ->post(route('admin.callNext'), ['department_id' => $department->id])
             ->assertSessionHas('warning');
+    }
+
+    public function test_staff_can_pause_and_resume_a_specific_window(): void
+    {
+        Event::fake([QueueUpdated::class]);
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $department->update(['auto_pause_enabled' => false]);
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $counter->update(['auto_pause_enabled' => false]);
+
+        $this->actingAs($staff, 'web')
+            ->postJson(route('admin.togglePause'), [
+                'department_id' => $department->id,
+                'counter_id' => $counter->id,
+                'action' => 'pause',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'success' => true,
+                'counter_id' => $counter->id,
+                'queue_paused' => true,
+                'pause_mode' => 'manual',
+            ]);
+
+        $this->assertTrue($counter->fresh()->queue_paused);
+        $this->assertFalse($department->fresh()->queue_paused);
+
+        $this->actingAs($staff, 'web')
+            ->postJson(route('admin.togglePause'), [
+                'department_id' => $department->id,
+                'counter_id' => $counter->id,
+                'action' => 'resume',
+            ])
+            ->assertOk()
+            ->assertJson(['success' => true, 'queue_paused' => false]);
+
+        $this->assertFalse($counter->fresh()->queue_paused);
+    }
+
+    public function test_window_on_automatic_mode_cannot_be_paused_manually(): void
+    {
+        Event::fake([QueueUpdated::class]);
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $counter->update(['auto_pause_enabled' => true]);
+
+        $this->actingAs($staff, 'web')
+            ->postJson(route('admin.togglePause'), [
+                'department_id' => $department->id,
+                'counter_id' => $counter->id,
+                'action' => 'pause',
+            ])
+            ->assertStatus(422)
+            ->assertJson(['success' => false]);
+
+        $this->assertFalse($counter->fresh()->queue_paused);
+    }
+
+    public function test_switching_window_to_manual_mode_clears_lunch_auto_pause(): void
+    {
+        Event::fake([QueueUpdated::class]);
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $counter->update([
+            'auto_pause_enabled' => true,
+            'lunch_break_paused' => true,
+            'queue_paused' => true,
+        ]);
+
+        $this->actingAs($staff, 'web')
+            ->postJson(route('admin.pauseMode'), [
+                'department_id' => $department->id,
+                'counter_id' => $counter->id,
+                'mode' => 'manual',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'success' => true,
+                'pause_mode' => 'manual',
+                'auto_pause_enabled' => false,
+            ]);
+
+        $counter->refresh();
+        $this->assertFalse($counter->auto_pause_enabled);
+        $this->assertFalse($counter->lunch_break_paused);
+        $this->assertTrue($counter->queue_paused);
     }
 
     private function createStaff(Department $department): User

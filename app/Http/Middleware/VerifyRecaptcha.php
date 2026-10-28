@@ -46,9 +46,11 @@ class VerifyRecaptcha
             }
 
         } catch (\Exception $e) {
-            // If Google's API is unreachable, log and let the request through
-            // to avoid blocking legitimate users due to a network issue.
+            // Fail closed: if Google's API is unreachable we cannot verify the
+            // token, so do not let an unverified request through.
             Log::error('[reCAPTCHA] API error: ' . $e->getMessage());
+
+            return $this->fail($request, 'Unable to verify reCAPTCHA right now. Please try again.');
         }
 
         return $next($request);
