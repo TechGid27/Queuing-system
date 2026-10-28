@@ -8,12 +8,13 @@ use App\Models\QueueEntry;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 
 class DepartmentController extends Controller
 {
     public function index()
     {
-        $departments = Department::with(['staff' => fn ($query) => $query->orderBy('name'), 'counters' => fn ($query) => $query->orderBy('name')])
+        $departments = Department::with(['staff' => fn ($query) => $query->orderBy('name'), 'counters' => fn ($query) => $query->orderBy('id')])
             ->withCount('queueEntries')
             ->orderBy('name')
             ->get();
@@ -51,7 +52,7 @@ class DepartmentController extends Controller
         ]);
 
         $todayQueue = QueueEntry::where('department_id', $department->id)
-            ->whereDate('queue_date', today());
+            ->where('queue_date', today()->toDateString());
         $serving = (clone $todayQueue)->where('status', 'serving')->first();
         $next = (clone $todayQueue)->where('status', 'waiting')->orderBy('id')->first();
 
@@ -112,7 +113,14 @@ class DepartmentController extends Controller
     {
         $validated = $request->validate([
             'department_id' => 'required|integer|exists:departments,id',
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('counters', 'name')->where(
+                    fn ($query) => $query->where('department_id', $request->integer('department_id'))
+                ),
+            ],
         ]);
 
         $department = Department::findOrFail($validated['department_id']);
@@ -131,7 +139,7 @@ class DepartmentController extends Controller
 
         if (! $isActive) {
             $busy = QueueEntry::where('counter_id', $counter->id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->where('status', 'serving')
                 ->exists();
 

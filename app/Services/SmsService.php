@@ -44,37 +44,46 @@ class SmsService
     /**
      * Notify student that they are now being served (their turn).
      */
-    public function sendNowServingNotification(string $phone, string $ticketNumber): void
+    public function sendNowServingNotification(string $phone, string $ticketNumber, ?string $departmentName = null): void
     {
-        $message = "ACLC Cashier: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
+        $label = $this->departmentLabel($departmentName);
+        $message = "{$label}: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
         $this->send($phone, $message, 'now_serving');
     }
 
     /**
      * Notify the next-in-line student to prepare (they are 2nd in queue).
      */
-    public function sendAlmostYourTurnNotification(string $phone, string $ticketNumber): void
+    public function sendAlmostYourTurnNotification(string $phone, string $ticketNumber, ?string $departmentName = null): void
     {
-        $message = "ACLC Cashier: Ticket {$ticketNumber} - You're next in line! Please prepare your requirements and stay nearby.";
+        $label = $this->departmentLabel($departmentName);
+        $message = "{$label}: Ticket {$ticketNumber} - You're next in line! Please prepare your requirements and stay nearby.";
         $this->send($phone, $message, 'almost_turn');
     }
 
     /**
      * Notify student that their transaction is completed.
      */
-    public function sendCompletedNotification(string $phone, string $ticketNumber): void
+    public function sendCompletedNotification(string $phone, string $ticketNumber, ?string $departmentName = null): void
     {
-        $message = "ACLC Cashier: Ticket {$ticketNumber} - Your transaction has been completed. Thank you!";
+        $label = $this->departmentLabel($departmentName);
+        $message = "{$label}: Ticket {$ticketNumber} - Your transaction has been completed. Thank you!";
         $this->send($phone, $message, 'completed');
     }
 
     /**
      * Notify student that they were skipped (no response).
      */
-    public function sendSkippedNotification(string $phone, string $ticketNumber): void
+    public function sendSkippedNotification(string $phone, string $ticketNumber, ?string $departmentName = null): void
     {
-        $message = "ACLC Cashier: Ticket {$ticketNumber} - You were skipped due to no response. Please visit the Cashier's office to re-queue.";
+        $label = $this->departmentLabel($departmentName);
+        $message = "{$label}: Ticket {$ticketNumber} - You were skipped due to no response. Please visit the office to re-queue.";
         $this->send($phone, $message, 'skipped');
+    }
+
+    private function departmentLabel(?string $departmentName): string
+    {
+        return $departmentName ? "ACLC {$departmentName}" : 'ACLC Queue System';
     }
 
     // ─── Core Send ────────────────────────────────────────────────────────────

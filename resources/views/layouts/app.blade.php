@@ -150,6 +150,11 @@
             </a>
            @endif
             @if(auth()->user()->role === 'admin')
+            <a href="{{ route('admin.analytics') }}"
+                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                        {{ request()->routeIs('admin.analytics*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-graph-up-arrow w-4 text-center"></i> Analytics
+            </a>
             <a href="{{ route('admin.audit') }}"
                 class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                         {{ request()->routeIs('admin.audit') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">

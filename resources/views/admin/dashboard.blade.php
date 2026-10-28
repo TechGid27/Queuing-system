@@ -6,7 +6,7 @@
     $queueOperational = (bool) $selectedDepartment?->is_active;
 @endphp
 
-<div class="bg-white rounded-2xl border border-slate-200 p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="focus-hide bg-white rounded-2xl border border-slate-200 p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
     <div>
         <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Department Queue</div>
         <div class="text-lg font-black text-slate-900">{{ $selectedDepartment?->name ?? 'No Department' }}</div>
@@ -29,7 +29,7 @@
 </div>
 
 {{-- Stats --}}
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
+<div class="focus-hide grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center text-yellow-600 shrink-0">
             <i class="bi bi-hourglass-split text-lg"></i>
@@ -121,6 +121,31 @@
             </div>
         </div>
 
+        @if(auth()->user()->role !== 'admin' && ($counters ?? collect())->where('is_active', true)->isNotEmpty())
+        <div id="window-focus-bar" class="flex flex-col sm:flex-row sm:items-center gap-2 mb-4 pb-4 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+                <label for="window-select" class="text-[11px] font-bold text-slate-400 uppercase tracking-wide">My window</label>
+                <select id="window-select"
+                    class="min-w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                    <option value="">Select window</option>
+                    @foreach(($counters ?? collect())->where('is_active', true) as $counter)
+                        <option value="{{ $counter->id }}">{{ $counter->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="flex items-center gap-2 sm:ml-auto">
+                <button type="button" id="focus-mode-btn" disabled
+                    class="inline-flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="bi bi-arrows-fullscreen"></i> Focus window
+                </button>
+                <button type="button" id="exit-focus-btn"
+                    class="focus-only items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors">
+                    <i class="bi bi-fullscreen-exit"></i> Exit focus
+                </button>
+            </div>
+        </div>
+        @endif
+
         <div id="now-serving-panel" class="grid grid-cols-1 md:grid-cols-2 gap-3">
         @forelse(($counters ?? collect())->where('is_active', true) as $counter)
             @php
@@ -131,8 +156,8 @@
             <div class="border border-slate-200 rounded-2xl p-4 {{ $isBusy ? 'bg-white' : 'bg-slate-50' }}" data-counter-card="{{ $counter->id }}">
                 <div class="flex items-center justify-between mb-3">
                     <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">{{ $counter->name }}</span>
-                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {{ $isBusy ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400' }}" data-counter-status="{{ $counter->id }}">
-                        {{ $isBusy ? 'SERVING' : 'IDLE' }}
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {{ $counter->queue_paused ? 'bg-orange-100 text-orange-600' : ($isBusy ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400') }}" data-counter-status="{{ $counter->id }}">
+                        {{ $counter->queue_paused ? 'PAUSED' : ($isBusy ? 'SERVING' : 'IDLE') }}
                     </span>
                 </div>
                 <div data-counter-body="{{ $counter->id }}">
@@ -177,7 +202,7 @@
                             @csrf
                             <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
                             <input type="hidden" name="counter_id" value="{{ $counter->id }}">
-                            <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="0" {{ $waitingCount == 0 || !$queueOperational || $queuePaused ? 'disabled' : '' }}
+                            <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="0" data-counter-id="{{ $counter->id }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused || $counter->queue_paused ? 'disabled' : '' }}
                                 class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                 <i class="bi bi-play-circle-fill"></i> Call Next here
                             </button>
@@ -283,6 +308,20 @@
 @include('admin.dashboard_realtime')
 
 @section('scripts')
+<style>
+    [data-counter-card].focused-window {
+        border-color: #bfdbfe;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .focus-only { display: none !important; }
+    body.focus-mode .focus-hide { display: none !important; }
+    body.focus-mode .focus-only { display: inline-flex !important; }
+    body.focus-mode #now-serving-panel { grid-template-columns: 1fr !important; }
+    body.focus-mode #now-serving-panel [data-counter-card] { display: none; }
+    body.focus-mode #now-serving-panel [data-counter-card].focused-window { display: block; }
+    body.focus-mode .ticket-lg { font-size: 4rem; line-height: 1; }
+    body.focus-mode #waiting-list-body { max-height: 65vh; }
+</style>
 <script>
     const TOGGLE_PAUSE_URL  = "{{ route('admin.togglePause') }}";
     const PAUSE_MODE_URL = "{{ route('admin.pauseMode') }}";
@@ -292,6 +331,15 @@
     const IS_ADMIN_VIEWER = {{ auth()->user()->role === 'admin' ? 'true' : 'false' }};
     let   queueIsPaused     = {{ $queuePaused ? 'true' : 'false' }};
     let   pauseMode = "{{ ($autoPauseEnabled ?? true) ? 'auto' : 'manual' }}";
+    let   departmentIsPaused = {{ $queuePaused ? 'true' : 'false' }};
+    let   departmentPauseMode = "{{ ($autoPauseEnabled ?? true) ? 'auto' : 'manual' }}";
+    let   departmentPauseSource = @json($selectedDepartment?->lunch_break_paused ? 'lunch' : 'manual');
+    let   pauseScope = 'department';
+    let   counterState = {!! json_encode((object) collect($counters ?? [])->mapWithKeys(fn ($c) => [(string) $c->id => [
+        'queue_paused' => (bool) $c->queue_paused,
+        'auto_pause_enabled' => (bool) $c->auto_pause_enabled,
+        'lunch_break_paused' => (bool) $c->lunch_break_paused,
+    ]])->all()) !!};
     let   lunchBreakStart   = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakStart)->format('g:i A') }}";
     let   lunchBreakEnd     = "{{ \Carbon\Carbon::createFromFormat('H:i', $lunchBreakEnd)->format('g:i A') }}";
 
@@ -309,6 +357,12 @@
         if (resumeBtn) resumeBtn.disabled = true;
 
         try {
+            const cid = currentCounterId();
+            // Pause/resume only the selected window while the department is
+            // running. If the whole department is paused, Resume clears that
+            // first so every window comes back.
+            const targetCounterId = cid && !departmentIsPaused ? Number(cid) : null;
+
             const res = await fetch(TOGGLE_PAUSE_URL, {
                 method: 'POST',
                 headers: {
@@ -317,7 +371,10 @@
                     'Accept':       'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                body: JSON.stringify({ action, department_id: SELECTED_DEPARTMENT_ID }),
+                body: JSON.stringify(Object.assign(
+                    { action, department_id: SELECTED_DEPARTMENT_ID },
+                    targetCounterId ? { counter_id: targetCounterId } : {}
+                )),
             });
 
             const data = await res.json();
@@ -325,8 +382,9 @@
                 throw new Error(data.message || 'Unable to update the queue.');
             }
 
-            applyPauseState(data.queue_paused, 'manual');
+            applyPauseResponse(data);
             showToast(data.message, data.queue_paused ? 'warning' : 'success');
+            if (typeof refreshDashboard === 'function') refreshDashboard();
         } catch (e) {
             showToast(e.message || 'Failed to update the queue. Please try again.', 'warning');
         } finally {
@@ -350,6 +408,11 @@
             pauseBtn?.classList.add('hidden');
             resumeBtn?.classList.add('hidden');
         } else if (QUEUE_OPERATIONAL && pauseMode === 'manual') {
+            const windowName = currentCounterName();
+            const pauseNoun = windowName || 'Queue';
+            const resumeNoun = pauseScope === 'window' && windowName ? windowName : 'Queue';
+            if (pauseBtn) pauseBtn.innerHTML = `<i class="bi bi-pause-fill"></i> Pause ${pauseNoun}`;
+            if (resumeBtn) resumeBtn.innerHTML = `<i class="bi bi-play-fill"></i> Resume ${resumeNoun}`;
             pauseBtn?.classList.toggle('hidden', queueIsPaused);
             resumeBtn?.classList.toggle('hidden', !queueIsPaused);
         } else {
@@ -358,7 +421,10 @@
         }
 
         if (bannerTitle) {
-            bannerTitle.innerText = QUEUE_OPERATIONAL ? 'Queue is paused.' : 'Department is inactive.';
+            const windowName = currentCounterId() ? currentCounterName() : '';
+            bannerTitle.innerText = !QUEUE_OPERATIONAL
+                ? 'Department is inactive.'
+                : (pauseScope === 'window' && windowName ? `${windowName} is paused.` : 'Queue is paused.');
         }
         if (bannerReason && QUEUE_OPERATIONAL) {
             if (queueIsPaused && source === 'auto') {
@@ -371,11 +437,16 @@
         if (pausedBanner) pausedBanner.classList.toggle('hidden', QUEUE_OPERATIONAL && !queueIsPaused);
 
         if (statusBadge) {
-            const label = !QUEUE_OPERATIONAL ? 'INACTIVE' : (queueIsPaused ? 'PAUSED' : 'LIVE');
+            const windowPaused = pauseScope === 'window' && queueIsPaused;
+            const label = !QUEUE_OPERATIONAL
+                ? 'INACTIVE'
+                : (windowPaused ? 'WINDOW PAUSED' : (queueIsPaused ? 'PAUSED' : 'LIVE'));
             const colors = !QUEUE_OPERATIONAL
                 ? ['bg-slate-100', 'text-slate-500', 'bg-slate-400']
                 : (queueIsPaused
-                    ? ['bg-yellow-50', 'text-yellow-700', 'bg-yellow-500']
+                    ? (windowPaused
+                        ? ['bg-orange-50', 'text-orange-700', 'bg-orange-500']
+                        : ['bg-yellow-50', 'text-yellow-700', 'bg-yellow-500'])
                     : ['bg-green-50', 'text-green-700', 'bg-green-500']);
             statusBadge.className = `inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-1 rounded-full ${colors[0]} ${colors[1]}`;
             statusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${colors[2]}"></span>${label}`;
@@ -385,7 +456,9 @@
             button.disabled = !QUEUE_OPERATIONAL;
         });
         document.querySelectorAll('[data-queue-running]').forEach(button => {
-            button.disabled = !QUEUE_OPERATIONAL || queueIsPaused || button.dataset.empty === '1' || button.dataset.current === '1';
+            const cid = button.dataset.counterId ? String(button.dataset.counterId) : '';
+            const counterPaused = cid && counterState[cid] ? !!counterState[cid].queue_paused : false;
+            button.disabled = !QUEUE_OPERATIONAL || departmentIsPaused || counterPaused || button.dataset.empty === '1' || button.dataset.current === '1';
         });
     }
 
@@ -431,6 +504,87 @@
         }
     }
 
+    function applyPauseResponse(data) {
+        const cid = data.counter_id ? String(data.counter_id) : '';
+        if (cid) {
+            if (counterState[cid]) {
+                counterState[cid].queue_paused = !!data.queue_paused;
+                if (data.pause_mode) {
+                    counterState[cid].auto_pause_enabled = data.pause_mode === 'auto';
+                    if (data.pause_mode === 'manual') counterState[cid].lunch_break_paused = false;
+                }
+            }
+        } else {
+            departmentIsPaused = !!data.queue_paused;
+            if (data.pause_mode) departmentPauseMode = data.pause_mode;
+            departmentPauseSource = 'manual';
+        }
+        refreshPauseStateUI();
+    }
+
+    function setCounterStates(counters) {
+        if (!Array.isArray(counters)) return;
+        counters.forEach(function (c) {
+            const key = String(c.id);
+            counterState[key] = {
+                queue_paused: !!c.queue_paused,
+                auto_pause_enabled: !!c.auto_pause_enabled,
+                lunch_break_paused: !!c.lunch_break_paused,
+            };
+        });
+    }
+
+    function effectivePauseState() {
+        const cid = currentCounterId();
+        const state = cid ? counterState[cid] : null;
+        if (state) {
+            const windowPaused = !!state.queue_paused;
+            return {
+                paused: windowPaused || departmentIsPaused,
+                mode: state.auto_pause_enabled ? 'auto' : 'manual',
+                source: windowPaused
+                    ? (state.lunch_break_paused ? 'lunch' : 'manual')
+                    : departmentPauseSource,
+                scope: windowPaused ? 'window' : 'department',
+            };
+        }
+        return {
+            paused: departmentIsPaused,
+            mode: departmentPauseMode,
+            source: departmentPauseSource,
+            scope: 'department',
+        };
+    }
+
+    function refreshPauseStateUI(lbStart = null, lbEnd = null) {
+        const state = effectivePauseState();
+        pauseScope = state.scope;
+        updatePauseResumeUI(state.paused, lbStart, lbEnd, state.source, state.mode);
+        updateCounterPauseBadges();
+    }
+
+    function updateCounterPauseBadges() {
+        document.querySelectorAll('[data-counter-card]').forEach(card => {
+            const cid = String(card.getAttribute('data-counter-card'));
+            const state = counterState[cid];
+            const status = card.querySelector(`[data-counter-status="${cid}"]`);
+            if (!state || !status) return;
+            if (state.queue_paused) {
+                status.innerText = 'PAUSED';
+                status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-600';
+            } else if (status.innerText === 'PAUSED') {
+                const busy = !!card.querySelector('.ticket-lg');
+                if (busy) {
+                    status.innerText = 'SERVING';
+                    status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700';
+                } else {
+                    status.innerText = 'IDLE';
+                    status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-400';
+                }
+            }
+        });
+    }
+
     async function sendPauseMode(mode) {
         if (IS_ADMIN_VIEWER) return;
         if (!SELECTED_DEPARTMENT_ID) return;
@@ -445,7 +599,10 @@
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                 },
-                body: JSON.stringify({ mode, department_id: SELECTED_DEPARTMENT_ID }),
+                body: JSON.stringify(Object.assign(
+                    { mode, department_id: SELECTED_DEPARTMENT_ID },
+                    currentCounterId() ? { counter_id: Number(currentCounterId()) } : {}
+                )),
             });
 
             const data = await res.json();
@@ -453,10 +610,9 @@
                 throw new Error(data.message || 'Unable to update pause mode.');
             }
 
-            pauseMode = data.pause_mode;
-            updatePauseModeUI(pauseMode);
-            applyPauseState(data.queue_paused, 'manual');
+            applyPauseResponse(data);
             showToast(data.message, 'success');
+            if (typeof refreshDashboard === 'function') refreshDashboard();
         } catch (e) {
             showToast(e.message || 'Failed to update pause mode.', 'warning');
         }
@@ -502,7 +658,97 @@
         labelEl.innerText = 'Auto-skip in ' + display;
     }
 
-    applyPauseState(queueIsPaused);
+    // ── Window selection + focus/fullscreen mode ─────────────────────────────
+    const WINDOW_STORAGE_KEY = 'queue.window.' + (SELECTED_DEPARTMENT_ID || 'unknown');
+    let focusedWindowId = null;
+    const windowSelect = document.getElementById('window-select');
+    const focusModeBtn = document.getElementById('focus-mode-btn');
+    const exitFocusBtn = document.getElementById('exit-focus-btn');
+
+    function counterIds() {
+        if (!windowSelect) return [];
+        return Array.from(windowSelect.options).map(option => option.value).filter(Boolean);
+    }
+
+    function applyWindowSelection(value) {
+        const selected = String(value || '');
+        focusedWindowId = selected || null;
+
+        document.querySelectorAll('[data-counter-card]').forEach(card => {
+            card.classList.toggle(
+                'focused-window',
+                focusedWindowId && String(card.getAttribute('data-counter-card')) === focusedWindowId
+            );
+        });
+
+        if (focusModeBtn) focusModeBtn.disabled = !focusedWindowId;
+
+        try {
+            if (focusedWindowId) localStorage.setItem(WINDOW_STORAGE_KEY, focusedWindowId);
+            else localStorage.removeItem(WINDOW_STORAGE_KEY);
+        } catch (error) { /* storage unavailable */ }
+
+        if (!focusedWindowId) exitFocusMode();
+
+        refreshPauseStateUI();
+    }
+
+    function currentCounterId() {
+        const selected = focusedWindowId || (windowSelect ? windowSelect.value : '') || '';
+        return String(selected || '');
+    }
+
+    function currentCounterName() {
+        if (!windowSelect) return '';
+        const option = windowSelect.options[windowSelect.selectedIndex];
+        return option ? option.textContent.trim() : '';
+    }
+
+    function restoreWindowSelection() {
+        if (!windowSelect) return;
+
+        let saved = '';
+        try { saved = localStorage.getItem(WINDOW_STORAGE_KEY) || ''; } catch (error) { saved = ''; }
+
+        if (saved && counterIds().includes(saved)) windowSelect.value = saved;
+        applyWindowSelection(windowSelect.value);
+    }
+
+    function enterFocusMode() {
+        if (!windowSelect || !windowSelect.value) {
+            showToast('Select your window first.', 'warning');
+            return;
+        }
+
+        document.body.classList.add('focus-mode');
+
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(function () {});
+        }
+    }
+
+    function exitFocusMode() {
+        document.body.classList.remove('focus-mode');
+
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(function () {});
+        }
+    }
+
+    if (windowSelect) {
+        windowSelect.addEventListener('change', function () {
+            applyWindowSelection(windowSelect.value);
+        });
+    }
+    if (focusModeBtn) focusModeBtn.addEventListener('click', enterFocusMode);
+    if (exitFocusBtn) exitFocusBtn.addEventListener('click', exitFocusMode);
+    document.addEventListener('fullscreenchange', function () {
+        if (!document.fullscreenElement) document.body.classList.remove('focus-mode');
+    });
+
+    restoreWindowSelection();
+
+    refreshPauseStateUI();
     updateAutoSkipTimer();
     setInterval(updateAutoSkipTimer, 1000);
 </script>

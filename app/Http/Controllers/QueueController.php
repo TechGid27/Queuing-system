@@ -6,6 +6,7 @@ use App\Events\QueueUpdated;
 use App\Http\Requests\StoreQueueRequest;
 use App\Models\Department;
 use App\Models\QueueEntry;
+use App\Services\QueueMetricsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -14,15 +15,11 @@ use Illuminate\Validation\ValidationException;
 
 class QueueController extends Controller
 {
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-
-    /**
-     * Broadcast the current queue state to all connected clients.
-     */
-    private function currentCacheKey(int $departmentId): string
+    public function __construct(private QueueMetricsService $metrics)
     {
-        return "current_serving_number_{$departmentId}";
     }
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private function resolveDepartment(Request $request, ?QueueEntry $ticket = null): ?Department
     {
@@ -50,7 +47,7 @@ class QueueController extends Controller
         }
 
         $baseQuery = QueueEntry::where('department_id', $department->id)
-            ->whereDate('queue_date', today());
+            ->where('queue_date', today()->toDateString());
 
         // Optimized: 3 queries instead of 5.
         // 1) serving list (reuses first + count in PHP), 2) waiting count, 3) waiting top-8.
@@ -61,12 +58,6 @@ class QueueController extends Controller
             ->get();
         $currentServing = $currentServings->first();
         $currentNumber = $currentServing?->ticket_number ?? '--';
-
-        if ($currentServing) {
-            Cache::forever($this->currentCacheKey($department->id), $currentNumber);
-        } else {
-            Cache::forget($this->currentCacheKey($department->id));
-        }
 
         $waitingCount = (clone $baseQuery)->where('status', 'waiting')->count();
         $waitingList = (clone $baseQuery)->where('status', 'waiting')->orderBy('id')->take(8)->get();
@@ -107,9 +98,15 @@ class QueueController extends Controller
         $state = $this->queueState($selectedDepartment);
         extract($state);
         $queuePaused = (bool) $selectedDepartment?->queue_paused;
-        $avgServeTime = StaffController::getAvgServeMinutes($selectedDepartment?->id);
+        $avgServeTime = $this->metrics->averageServeMinutes($selectedDepartment?->id);
+        $counters = $selectedDepartment
+            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)
+                ->where('is_active', true)
+                ->orderBy('id')
+                ->get()
+            : collect();
 
-        return view('tv', compact('currentNumber', 'currentServing', 'currentServings', 'servingCount', 'nextNumber', 'waitingCount', 'waitingList', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
+        return view('tv', compact('currentNumber', 'currentServing', 'currentServings', 'servingCount', 'nextNumber', 'waitingCount', 'waitingList', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment', 'counters'));
     }
 
     // ─── Index (Public + Student View) ────────────────────────────────────────
@@ -128,7 +125,7 @@ class QueueController extends Controller
         if ($guest) {
             Auth::shouldUse('student');
             $myTicket = QueueEntry::where('guest_id', $guest->id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->whereIn('status', ['waiting', 'serving'])
                 ->latest()
                 ->first();
@@ -141,7 +138,7 @@ class QueueController extends Controller
 
         if ($myTicket && $myTicket->status === 'waiting') {
             $myPosition = QueueEntry::where('department_id', $myTicket->department_id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->where('status', 'waiting')
                     ->where('id', '<=', $myTicket->id)
                     ->count();
@@ -149,7 +146,7 @@ class QueueController extends Controller
 
         $purposes = \App\Models\Purpose::where('is_active', true)->orderBy('name', 'asc')->get();
         $queuePaused = (bool) $selectedDepartment?->queue_paused;
-        $avgServeTime = \App\Http\Controllers\StaffController::getAvgServeMinutes($selectedDepartment?->id);
+        $avgServeTime = $this->metrics->averageServeMinutes($selectedDepartment?->id);
 
         if ($guest) {
             return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket', 'myPosition', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
@@ -171,7 +168,7 @@ class QueueController extends Controller
         if (! $selectedDepartment && $guest && $departmentId) {
             $ownsActiveTicket = QueueEntry::where('guest_id', $guest->id)
                 ->where('department_id', $departmentId)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->whereIn('status', ['waiting', 'serving'])
                 ->exists();
 
@@ -202,11 +199,19 @@ class QueueController extends Controller
                 ] : null,
                 'current_servings' => $state['currentServings']->map(fn ($s) => [
                     'ticket_number' => $s->ticket_number,
+                    'counter_id' => $s->counter_id,
                     'counter_name' => $s->counter?->name,
                 ])->values(),
                 'serving_count' => $state['servingCount'],
+                'counters' => $selectedDepartment
+                    ? \App\Models\Counter::where('department_id', $selectedDepartment->id)
+                        ->where('is_active', true)
+                        ->orderBy('id')
+                        ->get(['id', 'name', 'queue_paused'])
+                        ->values()
+                    : collect(),
                 'queue_paused' => (bool) $selectedDepartment?->queue_paused,
-                'avg_serve_mins' => \App\Http\Controllers\StaffController::getAvgServeMinutes($selectedDepartment?->id),
+                'avg_serve_mins' => $this->metrics->averageServeMinutes($selectedDepartment?->id),
             ];
         });
         $myTicket = null;
@@ -214,14 +219,14 @@ class QueueController extends Controller
         if ($guest && $selectedDepartment) {
             $ticket = QueueEntry::where('guest_id', $guest->id)
                 ->where('department_id', $selectedDepartment->id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->latest()
                 ->first(['id', 'ticket_number', 'status']);
 
             if ($ticket) {
                 $position = $ticket->status === 'waiting'
                     ? QueueEntry::where('department_id', $selectedDepartment->id)
-                        ->whereDate('queue_date', today())
+                        ->where('queue_date', today()->toDateString())
                         ->where('status', 'waiting')
                         ->where('id', '<=', $ticket->id)
                         ->count()
@@ -241,6 +246,24 @@ class QueueController extends Controller
     }
 
     // ─── Store (Join Queue) ───────────────────────────────────────────────────
+
+    /**
+     * Compute the next numeric ticket sequence with a single aggregate query
+     * instead of loading every ticket number for the day.
+     */
+    private function nextTicketSequence($query): int
+    {
+        $cast = match (DB::connection()->getDriverName()) {
+            'sqlite', 'pgsql' => 'CAST(ticket_number AS INTEGER)',
+            default => 'CAST(ticket_number AS UNSIGNED)',
+        };
+
+        $max = (clone $query)
+            ->selectRaw("MAX({$cast}) as max_ticket")
+            ->first()?->max_ticket;
+
+        return (int) $max + 1;
+    }
 
     public function store(StoreQueueRequest $request)
     {
@@ -279,7 +302,7 @@ class QueueController extends Controller
             }
 
             $hasActiveTicket = QueueEntry::where('guest_id', $lockedGuest->id)
-                ->whereDate('queue_date', $today)
+                ->where('queue_date', $today)
                 ->whereIn('status', ['waiting', 'serving'])
                 ->exists();
 
@@ -290,7 +313,7 @@ class QueueController extends Controller
             }
 
             $departmentQueue = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', $today);
+                ->where('queue_date', $today);
             $currentCount = (clone $departmentQueue)
                 ->whereIn('status', ['waiting', 'serving'])
                 ->count();
@@ -301,9 +324,7 @@ class QueueController extends Controller
                 ]);
             }
 
-            $sequence = (clone $departmentQueue)
-                ->pluck('ticket_number')
-                ->reduce(fn (int $max, string $number) => max($max, (int) $number), 0) + 1;
+            $sequence = $this->nextTicketSequence($departmentQueue);
 
             return QueueEntry::create([
                 'ticket_number' => str_pad((string) $sequence, 3, '0', STR_PAD_LEFT),

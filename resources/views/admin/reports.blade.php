@@ -35,11 +35,10 @@
 
 {{-- Summary Stats --}}
 @php
-    $total     = $entries->count();
-    $completed = $entries->where('status','completed')->count();
-    $skipped   = $entries->where('status','no_response')->count();
-    $avgMins   = $entries->filter(fn($e) => $e->served_at && $e->completed_at)
-                    ->avg(fn($e) => $e->served_at->diffInMinutes($e->completed_at));
+    $total     = $summary['total'];
+    $completed = $summary['completed'];
+    $skipped   = $summary['no_response'];
+    $avgMins   = $summary['avg_minutes'];
 @endphp
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
     <div class="bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3">
@@ -140,5 +139,10 @@
             </tbody>
         </table>
     </div>
+    @if($entries->hasPages())
+        <div class="px-5 py-4 border-t border-slate-100">
+            {{ $entries->links() }}
+        </div>
+    @endif
 </div>
 @endsection

@@ -37,12 +37,12 @@ class Department extends Model
 
     public function counters()
     {
-        return $this->hasMany(Counter::class)->orderBy('name');
+        return $this->hasMany(Counter::class)->orderBy('id');
     }
 
     public function activeCounters()
     {
-        return $this->hasMany(Counter::class)->where('is_active', true)->orderBy('name');
+        return $this->hasMany(Counter::class)->where('is_active', true)->orderBy('id');
     }
 
     public function queueEntries()

@@ -28,6 +28,10 @@
                 return response.json();
             })
             .then(data => {
+                if (typeof setCounterStates === 'function' && data.counters) {
+                    setCounterStates(data.counters);
+                }
+
                 // ── Stats ──────────────────────────────────────────────────
                 const waitingEl   = document.getElementById('stat-waiting');
                 const servingEl   = document.getElementById('stat-serving');
@@ -111,7 +115,7 @@
                                         <input type="hidden" name="_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
                                         <input type="hidden" name="counter_id" value="${counterId}">
-                                        <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" ${!data.department_active || data.queue_paused || data.waiting_count === 0 ? 'disabled' : ''}
+                                        <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" data-counter-id="${counterId}" ${!data.department_active || data.queue_paused || (counterState[String(counterId)] && counterState[String(counterId)].queue_paused) || data.waiting_count === 0 ? 'disabled' : ''}
                                             class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                             <i class="bi bi-play-circle-fill"></i> Call Next here
                                         </button>
@@ -153,8 +157,11 @@
 
                 // ── Pause/Resume UI sync ──────────────────────────────────
                 if (data.queue_paused !== undefined) {
-                    updatePauseResumeUI(data.queue_paused, data.lunch_break_start, data.lunch_break_end, data.pause_source, data.pause_mode);
+                    departmentIsPaused = !!data.queue_paused;
+                    if (data.pause_source) departmentPauseSource = data.pause_source;
+                    if (data.pause_mode) departmentPauseMode = data.pause_mode;
                 }
+                refreshPauseStateUI(data.lunch_break_start, data.lunch_break_end);
 
                 // ── Waiting list ───────────────────────────────────────────
                 const listEl = document.getElementById('waiting-list-body');
@@ -197,7 +204,7 @@
         if (echoAttached || !window.Echo || !SELECTED_DEPARTMENT_ID) return;
         echoAttached = true;
         // Reuse the existing Echo instance from layout — no duplicate connection
-        window.Echo.channel(`queue.${SELECTED_DEPARTMENT_ID}`).listen('.queue.updated', function(data) {
+        window.Echo.private(`queue.${SELECTED_DEPARTMENT_ID}.staff`).listen('.queue.updated', function(data) {
             refreshDashboard();
         });
     }
@@ -205,6 +212,12 @@
     window.addEventListener('echo:ready', attachRealtime);
 
     refreshDashboard();
-    setInterval(refreshDashboard, 5000);
+    setInterval(function () {
+        if (document.hidden) return;
+        refreshDashboard();
+    }, 5000);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) refreshDashboard();
+    });
 </script>
 @endpush

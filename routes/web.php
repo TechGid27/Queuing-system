@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminAnalyticsController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminOverviewController;
 use App\Http\Controllers\DepartmentController;
@@ -23,9 +24,9 @@ Route::middleware('guest:web,student')->group(function () {
     Route::get('/verify', [AuthController::class, 'showRegister'])->name('register');
     Route::post('/verify', [AuthController::class, 'registerStudent'])->middleware('recaptcha')->name('register.post');
 
-    // One-time initial administrator registration.
-    // Route::get('/private/register', [AuthController::class, 'showDepartmentRegister'])->name('private_register');
-    // Route::post('/private/register', [AuthController::class, 'registerStaff'])->middleware('recaptcha')->name('private_register.post');
+    // One-time initial administrator registration (self-disables once an admin exists).
+    Route::get('/private/register', [AuthController::class, 'showDepartmentRegister'])->name('private_register');
+    Route::post('/private/register', [AuthController::class, 'registerStaff'])->middleware('recaptcha')->name('private_register.post');
 
     // OTP Verification
     Route::get('/verify-otp', [AuthController::class, 'showVerifyOtp'])->name('student.verify.show');
@@ -71,6 +72,8 @@ Route::middleware(['auth:web', 'is_admin'])->group(function () {
     // Route::get('/admin', [StaffController::class, 'index'])->name('admin.index');
     Route::get('/admin/overview', [AdminOverviewController::class, 'index'])->name('admin.overview');
     Route::get('/admin/overview/status', [AdminOverviewController::class, 'status'])->name('admin.overview.status');
+    Route::get('/admin/analytics', [AdminAnalyticsController::class, 'index'])->name('admin.analytics');
+    Route::get('/admin/analytics/data', [AdminAnalyticsController::class, 'data'])->name('admin.analytics.data');
     Route::get('/admin/audit-log', [AdminOverviewController::class, 'auditLog'])->name('admin.audit');
     Route::get('/admin/departments', [DepartmentController::class, 'index'])->name('admin.departments.index');
     Route::post('/admin/departments', [DepartmentController::class, 'store'])->name('admin.departments.store');

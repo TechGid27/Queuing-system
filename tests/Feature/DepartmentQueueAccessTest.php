@@ -227,6 +227,28 @@ class DepartmentQueueAccessTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_reports_summary_covers_all_rows_while_list_is_paginated(): void
+    {
+        $admin = $this->createUser('admin');
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+
+        for ($i = 0; $i < 55; $i++) {
+            $this->createQueueEntry($department, "Student {$i}", $i < 30 ? 'completed' : 'no_response');
+        }
+
+        $this->actingAs($admin, 'web')
+            ->get(route('admin.reports', [
+                'department_id' => $department->id,
+                'date' => today()->toDateString(),
+            ]))
+            ->assertOk()
+            ->assertViewHas('summary', fn (array $summary) => $summary['total'] === 55
+                && $summary['completed'] === 30
+                && $summary['no_response'] === 25)
+            ->assertViewHas('entries', fn ($entries) => $entries->perPage() === 50
+                && $entries->total() === 55);
+    }
+
     private function createUser(string $role, ?Department $department = null, bool $active = true): User
     {
         static $sequence = 0;

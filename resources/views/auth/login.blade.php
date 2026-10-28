@@ -71,13 +71,6 @@
         </form>
 
         <div class="border-t border-slate-100 mt-6 pt-5 text-center">
-            <p class="text-sm text-slate-400">
-                New student?
-                <a href="{{ route('register') }}" class="text-primary font-semibold hover:underline">Create an account</a>
-            </p>
-        </div>
-
-        <div class="text-center mt-4">
             <a href="{{ route('home') }}" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">
                 ← Back to Home
             </a>

@@ -21,4 +21,12 @@ class ExampleTest extends TestCase
         $response->assertStatus(200);
         $this->get('/tv')->assertStatus(200);
     }
+
+    public function test_responses_include_baseline_security_headers(): void
+    {
+        $this->get('/')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('X-Frame-Options', 'SAMEORIGIN')
+            ->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    }
 }

@@ -9,8 +9,10 @@ use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -64,7 +66,7 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $key = 'login-attempts:'.$request->ip();
+        $key = 'login-attempts:'.Str::lower($credentials['email']).'|'.$request->ip();
 
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
@@ -101,9 +103,13 @@ class AuthController extends Controller
                     ->with('warning', 'Please verify your phone number first.');
             }
 
-            return in_array($user->role, ['admin', 'staff'], true)
-                ? redirect()->intended(route('admin.index'))
-                : redirect()->route('login')->withErrors(['email' => 'This account does not have a valid staff role.']);
+            if (! in_array($user->role, ['admin', 'staff'], true)) {
+                Auth::guard('web')->logout();
+
+                return redirect()->route('login')->withErrors(['email' => 'This account does not have a valid staff role.']);
+            }
+
+            return redirect()->intended(route($this->dashboardRouteFor($user)));
         }
 
         RateLimiter::hit($key, 60);
@@ -155,6 +161,14 @@ class AuthController extends Controller
             $request->session()->put('queue_department_id', $department->id);
         }
 
+        $existingGuest = Guest::where('phone_number', $request->phone_number)->first();
+
+        if ($existingGuest?->isPhoneVerified()) {
+            return back()->withErrors([
+                'phone_number' => 'This number is already registered. Please log in instead.',
+            ])->withInput();
+        }
+
         Guest::updateOrCreate(
             ['phone_number' => $request->phone_number],
             [
@@ -194,17 +208,36 @@ class AuthController extends Controller
             return back()->withErrors(['email' => 'This email is already registered.'])->withInput();
         }
 
-        User::where('email', $request->email)->whereNull('phone_verified_at')->delete();
-        User::where('phone_number', $request->phone_number)->whereNull('phone_verified_at')->delete();
+        $lock = Cache::lock('bootstrap-admin-registration', 10);
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone_number' => $request->phone_number,
-            'password' => Hash::make($request->password),
-            'role' => 'admin',
-            'is_active' => true,
-        ]);
+        if (! $lock->get()) {
+            return back()
+                ->withErrors(['email' => 'Administrator registration is already in progress. Please try again.'])
+                ->withInput();
+        }
+
+        try {
+            // Re-check under the lock so two concurrent requests cannot both
+            // pass the "no admin yet" check and create two administrator accounts.
+            if (User::where('role', 'admin')->exists()) {
+                return redirect()->route('login')
+                    ->with('warning', 'The administrator account has already been created.');
+            }
+
+            User::where('email', $request->email)->whereNull('phone_verified_at')->delete();
+            User::where('phone_number', $request->phone_number)->whereNull('phone_verified_at')->delete();
+
+            User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'phone_number' => $request->phone_number,
+                'password' => Hash::make($request->password),
+                'role' => 'admin',
+                'is_active' => true,
+            ]);
+        } finally {
+            $lock->release();
+        }
 
         $this->sendOtp($request->phone_number, self::OTP_USER_VERIFICATION);
         $request->session()->put([
@@ -271,7 +304,7 @@ class AuthController extends Controller
             ->orderBy('id', 'desc')
             ->first();
 
-        if (! $record || $record->otp !== $request->otp) {
+        if (! $record || ! $record->matches($request->otp)) {
             RateLimiter::hit($attemptKey, 600);
 
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
@@ -311,7 +344,7 @@ class AuthController extends Controller
         Auth::guard('web')->login($account);
         $request->session()->regenerate();
 
-        return redirect()->route('admin.index')->with('success', 'Phone verified. Welcome, '.$account->name.'!');
+        return redirect()->route($this->dashboardRouteFor($account))->with('success', 'Phone verified. Welcome, '.$account->name.'!');
     }
 
     // ─── OTP: Resend ─────────────────────────────────────────────────────────
@@ -422,7 +455,7 @@ class AuthController extends Controller
             ->orderBy('id', 'desc')
             ->first();
 
-        if (! $user || ! $record || $record->otp !== $request->otp) {
+        if (! $user || ! $record || ! $record->matches($request->otp)) {
             RateLimiter::hit($attemptKey, 600);
 
             return back()->withErrors(['otp' => 'Invalid OTP. Please try again.']);
@@ -477,9 +510,18 @@ class AuthController extends Controller
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
 
-        $redirect = in_array($user->role, ['admin', 'staff'], true) ? route('admin.index') : route('login');
+        $redirect = in_array($user->role, ['admin', 'staff'], true)
+            ? route($this->dashboardRouteFor($user))
+            : route('login');
 
         return redirect($redirect)->with('success', 'Password reset successfully. Welcome back, '.$user->name.'!');
+    }
+
+    // ─── Redirect Helper ─────────────────────────────────────────────────────
+
+    private function dashboardRouteFor(User $user): string
+    {
+        return $user->role === 'admin' ? 'admin.overview' : 'admin.index';
     }
 
     // ─── OTP Helper ──────────────────────────────────────────────────────────
@@ -491,7 +533,7 @@ class AuthController extends Controller
         PhoneOtp::create([
             'phone_number' => $phone,
             'purpose' => $purpose,
-            'otp' => $otp,
+            'otp' => Hash::make($otp),
             'expires_at' => now()->addMinutes(10),
         ]);
         $this->sms->sendOtp($phone, $otp);
@@ -504,7 +546,7 @@ class AuthController extends Controller
         PhoneOtp::create([
             'phone_number' => $phone,
             'purpose' => self::OTP_PASSWORD_RESET,
-            'otp' => $otp,
+            'otp' => Hash::make($otp),
             'expires_at' => now()->addMinutes(10),
         ]);
         $this->sms->sendPasswordResetOtp($phone, $otp);

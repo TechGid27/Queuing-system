@@ -4,8 +4,8 @@ Department-based queue management with multi-counter serving, realtime updates,
 phone OTP verification, and a TV display. Built for ACLC Mandaue front-desk
 operations (Admission, Cashier, Registrar, etc.).
 
-**Stack:** Laravel 9 · PHP 8.2 · MySQL / PostgreSQL · Pusher Channels ·
-Textbee SMS · Tailwind CSS · Blade
+**Stack:** Laravel 9 · PHP 8.2.x (XAMPP/LAMPP) · MySQL 8 / MariaDB / PostgreSQL 14+ ·
+Pusher Channels · Textbee SMS · Tailwind CSS · Blade
 
 ---
 
@@ -15,20 +15,54 @@ Textbee SMS · Tailwind CSS · Blade
 
 | Tool | Version |
 |---|---|
-| PHP | 8.2.x (use `/opt/lampp/bin/php` on XAMPP — Laravel 9 warns on PHP 8.5) |
-| Composer | 2.x |
+| PHP | 8.2.x (XAMPP/LAMPP) — **not** 8.5, Laravel 9 emits deprecation warnings |
+| Composer | 2.x (run it with the XAMPP PHP binary) |
 | Database | MySQL 8 / MariaDB **or** PostgreSQL 14+ |
 | Node + npm | 18+ (only for building frontend assets) |
+
+### PHP binary (important)
+
+Always use the PHP that ships with XAMPP/LAMPP so the version matches the project.
+
+**Linux (LAMPP):**
+```bash
+/opt/lampp/bin/php -v        # PHP 8.2.12
+/opt/lampp/bin/php artisan serve
+```
+
+**Windows (XAMPP), PowerShell:**
+```powershell
+& "C:\xampp\php\php.exe" -v
+& "C:\xampp\php\php.exe" artisan serve
+```
+
+**Windows (XAMPP), Command Prompt:**
+```bat
+"C:\xampp\php\php.exe" -v
+"C:\xampp\php\php.exe" artisan serve
+```
+
+> All `php ...` commands below assume this binary. If your default `php` is 8.5,
+> replace it with the path for your OS. If Composer also picks the wrong PHP:
+> ```bash
+> # Linux
+> /opt/lampp/bin/php "$(command -v composer)" install
+> # Windows (adjust the .phar path if needed)
+> "C:\xampp\php\php.exe" "C:\ProgramData\ComposerSetup\bin\composer.phar" install
+> ```
 
 ### Step-by-step
 
 ```bash
+# Linux (LAMPP). On Windows replace $PHP with & "C:\xampp\php\php.exe" (PowerShell)
+PHP=/opt/lampp/bin/php
+
 # 1. Install PHP dependencies
-composer install
+$PHP "$(command -v composer)" install
 
 # 2. Configure environment
 cp .env.example .env
-php artisan key:generate
+$PHP artisan key:generate
 ```
 
 Edit `.env` — the minimum you must set:
@@ -61,17 +95,17 @@ RECAPTCHA_SECRET_KEY=
 
 ```bash
 # 3. Migrate + seed (creates default admin + purposes)
-php artisan migrate
-php artisan db:seed
+$PHP artisan migrate
+$PHP artisan db:seed
 
 # 4. (Optional) Build frontend assets — otherwise CDN versions are used
 npm install && npm run build
 
 # 5. Run the app
-php artisan serve               # http://localhost:8000
+$PHP artisan serve              # http://localhost:8000
 
 # 6. Run the scheduler (REQUIRED for lunch auto-pause + 3-min auto-skip)
-php artisan schedule:work
+$PHP artisan schedule:work
 ```
 
 > For full speed, run with OPcache (XAMPP has no sudo-safe php.ini edit):
@@ -81,6 +115,8 @@ php artisan schedule:work
 >   -d opcache.memory_consumption=128 -d opcache.max_accelerated_files=10000 \
 >   artisan serve
 > ```
+> On Windows, enable `opcache.enable=1` and `opcache.enable_cli=1` in
+> `C:\xampp\php\php.ini`, then restart the terminal/Apache.
 
 ### Getting API keys
 
@@ -135,6 +171,8 @@ Password reset uses the same SMS OTP channel.
 | Staff (`web` guard, locked to 1 department) | Call Next / Skip / Complete, pause toggle, reports |
 | Admin (`web` guard, all departments) | Everything + departments, staff, counters, purposes, audit log, PDF reports |
 
+> After login, **admins land on `/admin/overview`**; staff land on `/admin`.
+
 ---
 
 ## 3. Architecture
@@ -171,9 +209,9 @@ app/
 
 - **Per-department counters** (`counters` table): each counter serves one ticket;
   legacy rows without `counter_id` display on the first active counter.
-- **Cache strategy**: `current_serving_number_{dept}` (forever, cleared on
-  empty), `avg_serve_mins_{dept}_{date}` (60s), `queue_status_dept_{id}` (3s
-  polling cache, invalidated on every state change).
+- **Cache strategy**: `avg_serve_mins_{dept}_{date}` (60s) and
+  `queue_status_dept_{id}` (3s polling cache, invalidated on every state
+  change). Serving numbers are read live from `queue_entries`.
 - **Audit trail**: every transition writes a `queue_actions` row (actor,
   department, ticket) shown in Admin → Audit Log.
 - **Guards**: two auth guards — `web` (staff/admin `users`) and `student`
@@ -202,25 +240,40 @@ app/
 
 ## 5. Testing
 
+Use the XAMPP PHP binary (see [PHP binary](#php-binary-important)):
+
 ```bash
-php artisan test
+# Linux (LAMPP)
+/opt/lampp/bin/php artisan test --no-coverage
 ```
 
-Suites: `AdminOverviewTest`, `DepartmentQueueAccessTest`, `GuestQueueFlowTest`,
+```bat
+:: Windows (XAMPP)
+"C:\xampp\php\php.exe" artisan test --no-coverage
+```
+
+`phpunit.xml` forces `APP_ENV=testing` + in-memory SQLite, and `tests/TestCase.php`
+refuses to run against a non-testing database. If you see
+`Refusing to run tests against environment ...`, run `/opt/lampp/bin/php artisan config:clear`
+(or the Windows XAMPP binary) first — a stale `bootstrap/cache/config.php`
+overrides the test env.
+
+Current status: **30 tests passing (132 assertions)** in
+`AdminOverviewTest`, `DepartmentQueueAccessTest`, `GuestQueueFlowTest`,
 `ReliabilityTest`, `StaffQueueConsoleTest` — multi-counter concurrency,
-pause/mode audit, auto-skip locking.
-Known pre-existing failures: `GuestQueueFlowTest` (commented-out
-private-register route) and some `ReliabilityTest` CSRF (419) cases.
+pause/mode audit, auto-skip locking. CI (`.github/workflows/laravel.yml`)
+runs the same suite on PHP 8.2.
 
 ## 6. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `Deprecated ... nullable` warnings | You're on PHP 8.5 — switch to PHP 8.2 (`/opt/lampp/bin/php`) |
+| `Deprecated ... nullable` warnings | You're on PHP 8.5 — switch to 8.2: `/opt/lampp/bin/php` (Linux) or `C:\xampp\php\php.exe` (Windows) |
+| `php` points to the wrong version | Call the XAMPP binary explicitly (see [PHP binary](#php-binary-important)); Composer may also need `.../php .../composer` |
 | Pages load slowly (500–900ms polls) | Run serve with the OPcache flags above; keep project on SSD, not external HDD; `artisan serve` is single-threaded — use Apache for multi-tab demos |
 | OTP not arriving | Check Textbee key/device; else read OTP in `storage/logs/laravel.log` |
 | Realtime not instant | Check Pusher creds — 5s polling fallback still works |
-| Auto-skip / lunch pause dead | `php artisan schedule:work` must be running |
+| Auto-skip / lunch pause dead | `artisan schedule:work` must be running (use the XAMPP `php` binary) |
 | Staff can't register | First admin comes from `AdminSeeder`, not `/private/register` (disabled once an admin exists) |
 | `419` on forms | Session expired — refresh and retry |
 

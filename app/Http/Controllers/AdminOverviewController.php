@@ -39,7 +39,7 @@ class AdminOverviewController extends Controller
             'staff as active_staff_count' => fn ($query) => $query->where('is_active', true),
         ])->orderBy('name')->get();
 
-        $entries = QueueEntry::whereDate('queue_date', today())
+        $entries = QueueEntry::where('queue_date', today()->toDateString())
             ->orderBy('id')
             ->get([
                 'id',

@@ -8,7 +8,6 @@ use App\Models\QueueEntry;
 use App\Services\QueueTransitionService;
 use App\Services\SmsService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 
 class AutoSkipQueue extends Command
 {
@@ -44,32 +43,27 @@ class AutoSkipQueue extends Command
 
             foreach ($skippedList as $skipped) {
                 if ($skipped->phone_number) {
-                    $sms->sendSkippedNotification($skipped->phone_number, $skipped->ticket_number);
+                    $sms->sendSkippedNotification($skipped->phone_number, $skipped->ticket_number, $department->name);
                 }
             }
 
             foreach ($calledList as $nextStudent) {
-                Cache::forever("current_serving_number_{$department->id}", $nextStudent->ticket_number);
                 if ($nextStudent->phone_number) {
-                    $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number);
+                    $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name);
                 }
             }
 
-            if (empty($calledList)) {
-                Cache::forget("current_serving_number_{$department->id}");
-            }
-
             $upNext = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->where('status', 'waiting')
                 ->orderBy('id')
                 ->first();
             if ($upNext?->phone_number) {
-                $sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number);
+                $sms->sendAlmostYourTurnNotification($upNext->phone_number, $upNext->ticket_number, $department->name);
             }
 
             $waitingCount = QueueEntry::where('department_id', $department->id)
-                ->whereDate('queue_date', today())
+                ->where('queue_date', today()->toDateString())
                 ->where('status', 'waiting')
                 ->count();
 

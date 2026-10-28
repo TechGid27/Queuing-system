@@ -13,10 +13,16 @@ class Counter extends Model
         'department_id',
         'name',
         'is_active',
+        'queue_paused',
+        'auto_pause_enabled',
+        'lunch_break_paused',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'queue_paused' => 'boolean',
+        'auto_pause_enabled' => 'boolean',
+        'lunch_break_paused' => 'boolean',
     ];
 
     public function department()
@@ -33,7 +39,7 @@ class Counter extends Model
     {
         return $this->hasOne(QueueEntry::class)
             ->where('status', 'serving')
-            ->whereDate('queue_date', today())
+            ->where('queue_date', today()->toDateString())
             ->latestOfMany();
     }
 }
