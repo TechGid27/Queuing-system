@@ -40,6 +40,8 @@ class QueueController extends Controller
             return [
                 'currentNumber' => '--',
                 'currentServing' => null,
+                'currentServings' => collect(),
+                'servingCount' => 0,
                 'nextNumber' => 'Waiting',
                 'waitingCount' => 0,
                 'waitingList' => collect(),
@@ -148,11 +150,32 @@ class QueueController extends Controller
         $queuePaused = (bool) $selectedDepartment?->queue_paused;
         $avgServeTime = $this->metrics->averageServeMinutes($selectedDepartment?->id);
 
+        $pauseSource = $queuePaused
+            ? ($selectedDepartment?->lunch_break_paused ? 'lunch' : 'manual')
+            : null;
+        $lunchEnd = $selectedDepartment
+            ? (DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?: '13:30')
+            : null;
+
         if ($guest) {
             return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket', 'myPosition', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
         }
 
-        return view('dashboard', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
+        return view('dashboard', compact(
+            'currentNumber',
+            'nextNumber',
+            'waitingCount',
+            'currentServings',
+            'servingCount',
+            'waitingList',
+            'purposes',
+            'queuePaused',
+            'pauseSource',
+            'lunchEnd',
+            'avgServeTime',
+            'departments',
+            'selectedDepartment'
+        ));
     }
 
     // ─── API: Get Status (for polling fallback) ──────────────────────────────
@@ -211,6 +234,9 @@ class QueueController extends Controller
                         ->values()
                     : collect(),
                 'queue_paused' => (bool) $selectedDepartment?->queue_paused,
+                'pause_source' => $selectedDepartment?->queue_paused
+                    ? ($selectedDepartment->lunch_break_paused ? 'lunch' : 'manual')
+                    : null,
                 'avg_serve_mins' => $this->metrics->averageServeMinutes($selectedDepartment?->id),
             ];
         });

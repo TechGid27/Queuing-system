@@ -178,6 +178,7 @@
                         </div>
                     </div>
                     <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
+                        @if(auth()->user()->role !== 'admin')
                         <form action="{{ route('admin.reject', $serving->id) }}" method="POST">
                             @csrf
                             <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
@@ -192,6 +193,9 @@
                                 <i class="bi bi-check-lg"></i> Complete
                             </button>
                         </form>
+                        @else
+                        <span class="text-[11px] font-semibold text-slate-400">Monitoring view — queue actions are for staff only</span>
+                        @endif
                     </div>
                 @else
                     <div class="text-center py-6 text-slate-400">
