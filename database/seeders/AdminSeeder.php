@@ -10,14 +10,15 @@ class AdminSeeder extends Seeder
 {
     /**
      * Create the default administrator account.
-     * Safe to re-run: uses updateOrCreate by email.
+     * Safe to re-run: uses firstOrCreate by email, so an existing admin's
+     * password is never reset on deploy/restart.
      *
      * Customize via env (optional):
      *   ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_PHONE
      */
     public function run(): void
     {
-        $user = User::updateOrCreate(
+        $user = User::firstOrCreate(
             ['email' => env('ADMIN_EMAIL', 'admin@aclc.edu.ph')],
             [
                 'name' => env('ADMIN_NAME', 'System Administrator'),
