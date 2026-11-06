@@ -93,7 +93,7 @@ RECAPTCHA_SITE_KEY=
 RECAPTCHA_SECRET_KEY=
 
 # Administrator seed (no built-in defaults — skipped if blank)
-ADMIN_NAME=System Administrator
+ADMIN_NAME="System Administrator"
 ADMIN_EMAIL=
 ADMIN_PASSWORD=
 ADMIN_PHONE=
