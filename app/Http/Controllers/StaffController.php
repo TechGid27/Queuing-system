@@ -81,6 +81,19 @@ class StaffController extends Controller
         }
     }
 
+    /**
+     * Admin accounts are monitoring-only: they may watch the queue console
+     * but never change it (call next, skip, complete, pause, pause mode).
+     */
+    private function denyAdminQueueActions(): void
+    {
+        $user = Auth::guard('web')->user();
+
+        if ($user && $user->role === 'admin') {
+            abort(403, 'Admin accounts are monitoring-only.');
+        }
+    }
+
     private function broadcastQueueState(
         int $departmentId,
         ?string $completedTicket = null,
@@ -175,6 +188,8 @@ class StaffController extends Controller
 
     public function togglePause(Request $request)
     {
+        $this->denyAdminQueueActions();
+
         $department = $this->resolveDepartment($request);
         abort_unless($department, 404);
 
@@ -304,6 +319,8 @@ class StaffController extends Controller
 
     public function updatePauseMode(Request $request)
     {
+        $this->denyAdminQueueActions();
+
         $department = $this->resolveDepartment($request);
         abort_unless($department, 404);
 
@@ -415,6 +432,8 @@ class StaffController extends Controller
 
     public function callNext(Request $request)
     {
+        $this->denyAdminQueueActions();
+
         $department = $this->resolveDepartment($request);
         abort_unless($department, 404);
 
@@ -471,6 +490,8 @@ class StaffController extends Controller
 
     public function complete($id)
     {
+        $this->denyAdminQueueActions();
+
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 
@@ -491,6 +512,8 @@ class StaffController extends Controller
 
     public function reject($id)
     {
+        $this->denyAdminQueueActions();
+
         $student = QueueEntry::findOrFail($id);
         $this->authorizeQueueEntry($student);
 

@@ -77,6 +77,21 @@
                                 const rejectUrl = escapeHtml(queueActionUrl(REJECT_URL_TEMPLATE, s.id));
                                 const completeUrl = escapeHtml(queueActionUrl(COMPLETE_URL_TEMPLATE, s.id));
                                 const actionsDisabled = !data.department_active ? 'disabled' : '';
+                                const actionButtons = USER_ROLE !== 'admin' ? `
+                                    <form action="${rejectUrl}" method="POST">
+                                        <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                        <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                            <i class="bi bi-skip-forward-fill"></i> Skip
+                                        </button>
+                                    </form>
+                                    <form action="${completeUrl}" method="POST">
+                                        <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
+                                        <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                                            <i class="bi bi-check-lg"></i> Complete
+                                        </button>
+                                    </form>` : `<span class="text-[11px] font-semibold text-slate-400">Monitoring view — queue actions are for staff only</span>`;
                                 if (status) {
                                     status.innerText = 'SERVING';
                                     status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700';
@@ -94,20 +109,7 @@
                                         </div>
                                     </div>
                                     <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
-                                        <form action="${rejectUrl}" method="POST">
-                                            <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                            <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                            <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                                <i class="bi bi-skip-forward-fill"></i> Skip
-                                            </button>
-                                        </form>
-                                        <form action="${completeUrl}" method="POST">
-                                            <input type="hidden" name="_token" value="{{ csrf_token() }}">
-                                            <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
-                                            <button type="submit" data-department-active ${actionsDisabled} class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold px-3 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                                                <i class="bi bi-check-lg"></i> Complete
-                                            </button>
-                                        </form>
+                                        ${actionButtons}
                                     </div>`;
                             } else {
                                 const callBtn = USER_ROLE !== 'admin' ? `
