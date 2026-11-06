@@ -91,10 +91,16 @@ TEXTBEE_DEVICE_ID=
 # reCAPTCHA v2 on login/register (optional — skipped if blank)
 RECAPTCHA_SITE_KEY=
 RECAPTCHA_SECRET_KEY=
+
+# Administrator seed (no built-in defaults — skipped if blank)
+ADMIN_NAME=System Administrator
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+ADMIN_PHONE=
 ```
 
 ```bash
-# 3. Migrate + seed (creates default admin + purposes)
+# 3. Migrate + seed (purposes + administrator, when ADMIN_EMAIL/ADMIN_PASSWORD are set)
 $PHP artisan migrate
 $PHP artisan db:seed
 
@@ -274,7 +280,7 @@ runs the same suite on PHP 8.2.
 | OTP not arriving | Check Textbee key/device; else read OTP in `storage/logs/laravel.log` |
 | Realtime not instant | Check Pusher creds — 5s polling fallback still works |
 | Auto-skip / lunch pause dead | `artisan schedule:work` must be running (use the XAMPP `php` binary) |
-| Staff can't register | First admin comes from `AdminSeeder`, not `/private/register` (disabled once an admin exists) |
+| Staff can't register | First admin comes from `AdminSeeder` (`ADMIN_EMAIL` + `ADMIN_PASSWORD`) or `/private/register`, which disables itself once an admin exists |
 | `419` on forms | Session expired — refresh and retry |
 
 ## License
