@@ -15,7 +15,7 @@ mkdir -p \
 
 php artisan storage:link >/dev/null 2>&1 || true
 
-if [ -z "${APP_KEY:-}" ]; then
+if [ -z "${APP_KEY:-}" ] && ! grep -qs '^APP_KEY=.' .env 2>/dev/null; then
     log "WARN: APP_KEY is not set - encrypted cookies/sessions will fail"
 fi
 
