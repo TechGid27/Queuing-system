@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Guest;
 use App\Models\Department;
+use App\Models\Guest;
 use App\Models\PhoneOtp;
 use App\Models\User;
 use App\Services\SmsService;
@@ -109,6 +109,16 @@ class AuthController extends Controller
                 return redirect()->route('login')->withErrors(['email' => 'This account does not have a valid staff role.']);
             }
 
+            // Honour deep links after login, but never bounce an admin back
+            // to the staff queue console from a stale intended URL (e.g.
+            // they hit /admin while logged out).
+            if ($user->role === 'admin') {
+                $intended = session()->get('url.intended');
+                if ($intended && preg_match('#^/admin(/queue)?/?$#', (string) parse_url($intended, PHP_URL_PATH))) {
+                    session()->forget('url.intended');
+                }
+            }
+
             return redirect()->intended(route($this->dashboardRouteFor($user)));
         }
 
@@ -164,9 +174,20 @@ class AuthController extends Controller
         $existingGuest = Guest::where('phone_number', $request->phone_number)->first();
 
         if ($existingGuest?->isPhoneVerified()) {
-            return back()->withErrors([
-                'phone_number' => 'This number is already registered. Please log in instead.',
-            ])->withInput();
+            // Returning student: don't dead-end with "already registered" —
+            // send a login OTP so they can get back into the queue.
+            if ($request->filled('student_id')) {
+                $existingGuest->update(['student_id' => $request->student_id]);
+            }
+
+            $this->sendOtp($request->phone_number, self::OTP_GUEST_VERIFICATION);
+            $request->session()->put([
+                'otp_account_type' => 'guest',
+                'otp_phone' => $request->phone_number,
+            ]);
+
+            return redirect()->route('student.verify.show')
+                ->with('success', 'Welcome back! Enter the OTP sent to your phone to log in.');
         }
 
         Guest::updateOrCreate(
@@ -260,9 +281,12 @@ class AuthController extends Controller
             return redirect()->route('register');
         }
 
-        $account = ($accountType === 'guest' ? Guest::query() : User::query())
+        // Guests may be pending (first registration) or already verified
+        // (returning-student login). Staff accounts must still be pending.
+        $accountQuery = $accountType === 'guest' ? Guest::query() : User::query();
+        $account = $accountQuery
             ->where('phone_number', $phone)
-            ->whereNull('phone_verified_at')
+            ->when($accountType === 'user', fn ($query) => $query->whereNull('phone_verified_at'))
             ->first();
 
         if (! $account) {
@@ -316,9 +340,11 @@ class AuthController extends Controller
             return back()->withErrors(['otp' => 'OTP has expired. Please request a new one.']);
         }
 
+        // Guests: pending (first registration) or verified (returning login).
+        // Staff users: only pending registrations complete via OTP.
         $account = ($request->account_type === 'guest' ? Guest::query() : User::query())
             ->where('phone_number', $request->phone)
-            ->whereNull('phone_verified_at')
+            ->when($request->account_type === 'user', fn ($query) => $query->whereNull('phone_verified_at'))
             ->first();
 
         if (! $account) {
@@ -326,7 +352,10 @@ class AuthController extends Controller
                 ->withErrors(['phone' => 'Account not found.']);
         }
 
-        $account->update(['phone_verified_at' => now()]);
+        $wasVerified = (bool) $account->phone_verified_at;
+        if (! $wasVerified) {
+            $account->update(['phone_verified_at' => now()]);
+        }
         PhoneOtp::where('phone_number', $request->phone)->where('purpose', $purpose)->delete();
         RateLimiter::clear($attemptKey);
         $request->session()->forget(['otp_account_type', 'otp_phone']);
@@ -338,7 +367,9 @@ class AuthController extends Controller
             $departmentId = $request->session()->pull('queue_department_id');
 
             return redirect()->route('student.index', array_filter(['department_id' => $departmentId]))
-                ->with('success', 'Phone verified. Welcome to the queue!');
+                ->with('success', $wasVerified
+                    ? 'Welcome back! You are now logged in.'
+                    : 'Phone verified. Welcome to the queue!');
         }
 
         Auth::guard('web')->login($account);
@@ -358,7 +389,7 @@ class AuthController extends Controller
 
         $account = ($request->account_type === 'guest' ? Guest::query() : User::query())
             ->where('phone_number', $request->phone)
-            ->whereNull('phone_verified_at')
+            ->when($request->account_type === 'user', fn ($query) => $query->whereNull('phone_verified_at'))
             ->first();
 
         if (! $account) {

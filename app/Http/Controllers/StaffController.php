@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 class StaffController extends Controller
 {
     private SmsService $sms;
+
     private QueueTransitionService $transitions;
 
     public function __construct(SmsService $sms, QueueTransitionService $transitions)
@@ -139,7 +140,7 @@ class StaffController extends Controller
         $skippedCount = (clone $queue)->where('status', 'no_response')->count();
         $waitingStudents = (clone $queue)->where('status', 'waiting')->orderBy('id')->paginate(10)->withQueryString();
         $counters = $selectedDepartment
-            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)->orderBy('id')->get()
+            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)->with('purposes')->orderBy('id')->get()
             : collect();
         // Backward compat: legacy serving rows without counter_id display on the first active counter.
         $firstCounter = $counters->firstWhere('is_active', true) ?? $counters->first();
@@ -152,6 +153,9 @@ class StaffController extends Controller
             }
         }
         $busyCounterIds = $currentServings->pluck('counter_id')->filter()->all();
+        $eligibleCounts = $selectedDepartment
+            ? $this->transitions->eligibleWaitingCounts($selectedDepartment, $counters)
+            : [];
 
         $user = Auth::guard('web')->user();
         $myServing = ($user && $user->role === 'staff') ? $currentServings->firstWhere('served_by', $user->id) : null;
@@ -182,7 +186,8 @@ class StaffController extends Controller
             'lunchBreakEnd',
             'selectedDepartment',
             'departments',
-            'isAdmin'
+            'isAdmin',
+            'eligibleCounts'
         ));
     }
 
@@ -469,7 +474,7 @@ class StaffController extends Controller
         }
 
         if ($nextStudent->phone_number) {
-            $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name);
+            $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name, $nextStudent->counter?->name);
         }
 
         $upNext = QueueEntry::where('department_id', $department->id)
@@ -543,6 +548,18 @@ class StaffController extends Controller
 
     public function waitingList(Request $request)
     {
+        // The dashboard polls this endpoint every few seconds. Run the
+        // auto-skip here too (throttled) so expired tickets do not sit at
+        // "Auto-skipping..." until the next scheduler tick, or forever when
+        // the scheduler is not running.
+        if (Cache::add('queue_auto_skip_lock', 1, 10)) {
+            try {
+                \Illuminate\Support\Facades\Artisan::call('queue:auto-skip');
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         $department = $this->resolveDepartment($request);
         $queue = $this->todayQueue($department);
         $waitingStudents = (clone $queue)
@@ -561,7 +578,7 @@ class StaffController extends Controller
             ]));
         $currentServing = $currentServings->first();
         $counters = $department
-            ? \App\Models\Counter::where('department_id', $department->id)->orderBy('id')->get()
+            ? \App\Models\Counter::where('department_id', $department->id)->with('purposes')->orderBy('id')->get()
             : collect();
         $busyCounterIds = (clone $queue)->where('status', 'serving')->whereNotNull('counter_id')->pluck('counter_id')->all();
 
@@ -574,6 +591,9 @@ class StaffController extends Controller
             'serving_count' => $currentServings->count(),
             'counters' => $counters,
             'busy_counter_ids' => $busyCounterIds,
+            'eligible_counts' => $department
+                ? $this->transitions->eligibleWaitingCounts($department, $counters)
+                : [],
             'waiting_count' => (clone $queue)->where('status', 'waiting')->count(),
             'pagination' => [
                 'current_page' => $waitingStudents->currentPage(),

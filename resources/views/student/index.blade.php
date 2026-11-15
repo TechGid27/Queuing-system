@@ -133,6 +133,22 @@
                         Est. <span class="font-bold text-slate-600" id="my-est-time">~{{ round($myPosition * $avgServeTime) }} min</span>
                     </div>
                     @endif
+                    <div id="my-ticket-window"
+                        class="mt-3 text-xs font-semibold {{ $myTicket->status === 'serving' ? 'text-green-700' : 'text-slate-500' }}">
+                        @if($myTicket->status === 'serving')
+                            @if(is_array($myTicketWindows) && count($myTicketWindows))
+                                Proceed to <span class="font-black">{{ implode(' / ', $myTicketWindows) }}</span>
+                            @else
+                                Proceed to your window
+                            @endif
+                        @elseif($myTicketWindows === null)
+                            <span class="text-red-500 font-bold">No window assigned yet — please inform the front desk</span>
+                        @elseif(count($myTicketWindows))
+                            Served at <span class="font-black text-slate-700">{{ implode(' / ', $myTicketWindows) }}</span>
+                        @else
+                            Any available window
+                        @endif
+                    </div>
                 </div>
 
                 <div class="text-sm text-slate-500 mb-5">{{ $myTicket->purpose }}</div>
@@ -179,6 +195,7 @@
                     @error('purpose_id')
                         <p class="text-red-500 text-xs mt-1.5">{{ $message }}</p>
                     @enderror
+                    <p id="purpose-window-hint" class="hidden mt-2 text-xs font-semibold text-slate-500"></p>
 
                     {{-- Other purpose text field (hidden by default) --}}
                     <div id="other-purpose-wrap" class="{{ old('purpose_id') === 'other' ? '' : 'hidden' }} mt-2">
@@ -206,6 +223,42 @@
 @section('scripts')
 <script>
     // ── Other purpose toggle ───────────────────────────────────────────────────
+    const joinBlockedByServer = {{ !$selectedDepartment || $queuePaused ? 'true' : 'false' }};
+
+    function setJoinBlocked(blocked) {
+        const btn = document.getElementById('join-queue-button');
+        if (!btn) return;
+        btn.disabled = blocked || joinBlockedByServer;
+    }
+
+    function updatePurposeWindowHint(value) {
+        const hint = document.getElementById('purpose-window-hint');
+        if (!hint) return;
+
+        if (!value) {
+            hint.textContent = '';
+            hint.classList.add('hidden');
+            setJoinBlocked(false);
+            return;
+        }
+
+        const names = purposeWindowMap[value];
+        if (names === undefined || names === null) {
+            hint.textContent = 'No window assigned yet — please choose another purpose or ask the front desk.';
+            hint.classList.remove('hidden');
+            hint.classList.add('text-red-500');
+            setJoinBlocked(true);
+            return;
+        }
+
+        hint.classList.remove('text-red-500');
+        hint.textContent = Array.isArray(names) && names.length
+            ? `Served at ${names.join(' / ')}`
+            : 'Any available window';
+        hint.classList.remove('hidden');
+        setJoinBlocked(false);
+    }
+
     function handlePurposeChange(select) {
         const wrap  = document.getElementById('other-purpose-wrap');
         const input = document.getElementById('other-purpose-input');
@@ -217,7 +270,10 @@
             input.required = false;
             input.value = '';
         }
+        updatePurposeWindowHint(select.value);
     }
+
+    const purposeWindowMap = @json($purposeWindowMap);
 
     let avgServeMins = {{ $avgServeTime }};
     let queuePaused = {{ $queuePaused ? 'true' : 'false' }};
@@ -262,6 +318,43 @@
         if (joinButton) joinButton.disabled = paused || !departmentId;
     }
 
+    function renderMyTicketWindow(ticket, names) {
+        const windowEl = document.getElementById('my-ticket-window');
+        if (!windowEl) return;
+
+        const serving = ticket.status === 'serving';
+        const wins = Array.isArray(names) ? names : [];
+        windowEl.className = `mt-3 text-xs font-semibold ${serving ? 'text-green-700' : 'text-slate-500'}`;
+        windowEl.textContent = '';
+
+        if (serving) {
+            windowEl.append(wins.length ? 'Proceed to ' : 'Proceed to your window');
+            if (wins.length) {
+                const strong = document.createElement('span');
+                strong.className = 'font-black';
+                strong.textContent = wins.join(' / ');
+                windowEl.append(strong);
+            }
+            return;
+        }
+
+        if (names === null) {
+            const warn = document.createElement('span');
+            warn.className = 'text-red-500 font-bold';
+            warn.textContent = 'No window assigned yet — please inform the front desk';
+            windowEl.append(warn);
+            return;
+        }
+
+        windowEl.append(wins.length ? 'Served at ' : 'Any available window');
+        if (wins.length) {
+            const strong = document.createElement('span');
+            strong.className = 'font-black text-slate-700';
+            strong.textContent = wins.join(' / ');
+            windowEl.append(strong);
+        }
+    }
+
     function updateMyTicket(ticket) {
         if (!myTicketNumber || !ticket || ticket.ticket_number !== myTicketNumber) return;
 
@@ -269,10 +362,15 @@
         const positionRow = document.getElementById('my-position-row');
         if (!status) return;
 
+        const windows = ticket.windows;
+        const windowNames = Array.isArray(windows) ? windows : [];
+        const hasWindows = windows !== undefined;
+
         if (ticket.status === 'waiting') {
             status.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700';
             status.innerText = 'WAITING';
             positionRow?.classList.remove('hidden');
+            if (hasWindows) renderMyTicketWindow(ticket, windows);
             lastMyTicketStatus = ticket.status;
             return;
         }
@@ -281,8 +379,14 @@
         if (ticket.status === 'serving') {
             status.className = 'inline-flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-full bg-green-100 text-green-700';
             status.innerText = 'YOUR TURN NOW!';
+            if (hasWindows) renderMyTicketWindow(ticket, windows);
             if (lastMyTicketStatus !== 'serving') {
-                showToast("It's your turn. Please proceed to the window.", 'success');
+                showToast(
+                    windowNames.length
+                        ? `It's your turn. Please proceed to ${windowNames.join(' / ')}.`
+                        : "It's your turn. Please proceed to the window.",
+                    'success'
+                );
             }
             lastMyTicketStatus = ticket.status;
             return;
@@ -363,6 +467,8 @@
     attachRealtime();
     window.addEventListener('echo:ready', attachRealtime);
 
+    // Sync the "Other" text field, window hint and join button with any
+    // pre-selected purpose (e.g. old input after a failed submit).
     const initialPurposeSelect = document.querySelector('select[name="purpose_id"]');
     if (initialPurposeSelect) handlePurposeChange(initialPurposeSelect);
     updatePauseBanner(queuePaused);

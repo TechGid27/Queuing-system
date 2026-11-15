@@ -49,7 +49,7 @@ class AutoSkipQueue extends Command
 
             foreach ($calledList as $nextStudent) {
                 if ($nextStudent->phone_number) {
-                    $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name);
+                    $sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name, $nextStudent->counter?->name);
                 }
             }
 

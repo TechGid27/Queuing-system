@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\QueueUpdated;
 use App\Http\Requests\StoreQueueRequest;
+use App\Models\Counter;
 use App\Models\Department;
 use App\Models\QueueEntry;
 use App\Services\QueueMetricsService;
@@ -91,6 +92,88 @@ class QueueController extends Controller
         ));
     }
 
+    /**
+     * Windows a ticket may be served at:
+     *  - serving → the window actually serving it
+     *  - purpose assigned to windows in its department → those windows
+     *    (plus any general window that takes every purpose)
+     *  - "Other"/unmatched purpose → general windows only; null when none
+     *    exist (nothing can call the ticket until an admin assigns the
+     *    purpose or adds a general window)
+     *
+     * [] = any window, null = no window can serve it.
+     */
+    private function windowNamesFor(QueueEntry $ticket): ?array
+    {
+        if (! in_array($ticket->status, ['waiting', 'serving'], true)) {
+            return [];
+        }
+
+        if ($ticket->status === 'serving' && $ticket->counter_id) {
+            $name = Counter::whereKey($ticket->counter_id)->value('name');
+
+            return $name ? [$name] : [];
+        }
+
+        return $this->windowsForPurpose($ticket->department_id, $ticket->purpose_id);
+    }
+
+    /**
+     * [] = any window, null = no window can serve this purpose.
+     */
+    private function windowsForPurpose(?int $departmentId, ?int $purposeId): ?array
+    {
+        if (! $departmentId) {
+            return [];
+        }
+
+        // Paused windows are skipped: their purposes fall to the remaining
+        // windows until they resume.
+        $counters = Counter::where('department_id', $departmentId)
+            ->where('is_active', true)
+            ->where('queue_paused', false)
+            ->with('purposes')
+            ->orderBy('id')
+            ->get();
+
+        if ($counters->isEmpty()) {
+            return [];
+        }
+
+        $general = $counters
+            ->filter(fn ($counter) => $counter->purposes->isEmpty())
+            ->pluck('name')
+            ->values()
+            ->all();
+
+        $overflowNames = fn () => $counters
+            ->whereIn('id', Counter::overflowIds($departmentId))
+            ->pluck('name')
+            ->values()
+            ->all();
+
+        if (! $purposeId) {
+            return $general ?: $overflowNames();
+        }
+
+        $matched = $counters->contains(
+            fn ($counter) => $counter->purposes->pluck('id')->contains($purposeId)
+        );
+
+        if ($matched) {
+            return $counters
+                ->filter(fn ($counter) => $counter->purposes->isEmpty()
+                    || $counter->purposes->pluck('id')->contains($purposeId))
+                ->pluck('name')
+                ->values()
+                ->all();
+        }
+
+        // Purpose assigned to no window: general windows, or else the window
+        // with the fewest purposes, take it.
+        return $general ?: $overflowNames();
+    }
+
     // ─── TV Display ──────────────────────────────────────────────────────────────
 
     public function tv(Request $request)
@@ -104,6 +187,7 @@ class QueueController extends Controller
         $counters = $selectedDepartment
             ? \App\Models\Counter::where('department_id', $selectedDepartment->id)
                 ->where('is_active', true)
+                ->with('purposes')
                 ->orderBy('id')
                 ->get()
             : collect();
@@ -158,7 +242,14 @@ class QueueController extends Controller
             : null;
 
         if ($guest) {
-            return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket', 'myPosition', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment'));
+            $myTicketWindows = $myTicket ? $this->windowNamesFor($myTicket) : [];
+            $purposeWindowMap = [];
+            foreach ($purposes as $purpose) {
+                $purposeWindowMap[$purpose->id] = $this->windowsForPurpose($selectedDepartment?->id, $purpose->id);
+            }
+            $purposeWindowMap['other'] = $this->windowsForPurpose($selectedDepartment?->id, null);
+
+            return view('student.index', compact('currentNumber', 'nextNumber', 'waitingCount', 'purposes', 'myTicket', 'myPosition', 'queuePaused', 'avgServeTime', 'departments', 'selectedDepartment', 'myTicketWindows', 'purposeWindowMap'));
         }
 
         return view('dashboard', compact(
@@ -203,7 +294,7 @@ class QueueController extends Controller
         // Hot polling path (every 5s per open tab): cache the shared
         // department state for 3s so parallel polls skip all DB queries.
         // Per-guest `my_ticket` is computed below and never cached.
-        $cacheKey = 'queue_status_dept_' . ($selectedDepartment?->id ?? 'none');
+        $cacheKey = 'queue_status_dept_'.($selectedDepartment?->id ?? 'none');
         $payload = Cache::remember($cacheKey, 3, function () use ($selectedDepartment) {
             $state = $this->queueState($selectedDepartment);
 
@@ -229,8 +320,15 @@ class QueueController extends Controller
                 'counters' => $selectedDepartment
                     ? \App\Models\Counter::where('department_id', $selectedDepartment->id)
                         ->where('is_active', true)
+                        ->with('purposes')
                         ->orderBy('id')
-                        ->get(['id', 'name', 'queue_paused'])
+                        ->get()
+                        ->map(fn ($c) => [
+                            'id' => $c->id,
+                            'name' => $c->name,
+                            'queue_paused' => $c->queue_paused,
+                            'services' => $c->purposes->pluck('name')->values(),
+                        ])
                         ->values()
                     : collect(),
                 'queue_paused' => (bool) $selectedDepartment?->queue_paused,
@@ -247,7 +345,7 @@ class QueueController extends Controller
                 ->where('department_id', $selectedDepartment->id)
                 ->where('queue_date', today()->toDateString())
                 ->latest()
-                ->first(['id', 'ticket_number', 'status']);
+                ->first();
 
             if ($ticket) {
                 $position = $ticket->status === 'waiting'
@@ -262,6 +360,7 @@ class QueueController extends Controller
                     'ticket_number' => $ticket->ticket_number,
                     'status' => $ticket->status,
                     'position' => $position,
+                    'windows' => $this->windowNamesFor($ticket),
                 ];
             }
         }
@@ -335,6 +434,12 @@ class QueueController extends Controller
             if ($hasActiveTicket) {
                 throw ValidationException::withMessages([
                     'purpose_id' => 'You already have an active ticket in the queue.',
+                ]);
+            }
+
+            if ($this->windowsForPurpose($department->id, $purposeId) === null) {
+                throw ValidationException::withMessages([
+                    'purpose_id' => 'No window is assigned to this purpose yet. Please choose another purpose or ask the front desk.',
                 ]);
             }
 

@@ -11,14 +11,16 @@ use Throwable;
 class SmsService
 {
     private ?string $apiKey;
+
     private ?string $deviceId;
+
     private Client $client;
 
     public function __construct()
     {
-        $this->apiKey   = config('services.textbee.key');
+        $this->apiKey = config('services.textbee.key');
         $this->deviceId = config('services.textbee.device_id');
-        $this->client   = new Client(['timeout' => 15]);
+        $this->client = new Client(['timeout' => 15]);
     }
 
     // ─── Public Methods ───────────────────────────────────────────────────────
@@ -44,11 +46,23 @@ class SmsService
     /**
      * Notify student that they are now being served (their turn).
      */
-    public function sendNowServingNotification(string $phone, string $ticketNumber, ?string $departmentName = null): void
+    public function sendNowServingNotification(string $phone, string $ticketNumber, ?string $departmentName = null, ?string $windowName = null): void
+    {
+        $message = $this->nowServingMessage($ticketNumber, $departmentName, $windowName);
+        $this->send($phone, $message, 'now_serving');
+    }
+
+    /**
+     * Build the now-serving SMS text, naming the window when known.
+     */
+    public function nowServingMessage(string $ticketNumber, ?string $departmentName = null, ?string $windowName = null): string
     {
         $label = $this->departmentLabel($departmentName);
-        $message = "{$label}: Ticket {$ticketNumber} - It's your turn! Please proceed to the window now.";
-        $this->send($phone, $message, 'now_serving');
+        $destination = $windowName
+            ? "Please proceed to {$windowName} now."
+            : 'Please proceed to the window now.';
+
+        return "{$label}: Ticket {$ticketNumber} - It's your turn! {$destination}";
     }
 
     /**
@@ -103,6 +117,7 @@ class SmsService
                 'to' => $e164,
                 'type' => $type,
             ]);
+
             return;
         }
 
@@ -112,7 +127,7 @@ class SmsService
                 [
                     'json' => [
                         'recipients' => [$e164],
-                        'message'    => $message,
+                        'message' => $message,
                     ],
                     'headers' => [
                         'x-api-key' => $this->apiKey,

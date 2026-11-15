@@ -135,7 +135,12 @@
                         @php $serving = ($currentServings ?? collect())->firstWhere('counter_id', $counter->id); @endphp
                         <div class="bg-white/10 border border-white/10 rounded-2xl px-6 py-5 text-center transition-opacity {{ $counter->queue_paused ? 'opacity-60' : '' }}"
                              data-tv-counter="{{ $counter->id }}">
-                            <div class="text-xs font-bold tracking-widest text-blue-200 uppercase mb-2">{{ $counter->name }}</div>
+                            <div class="text-xs font-bold tracking-widest text-blue-200 uppercase mb-1">{{ $counter->name }}</div>
+                            @if($counter->purposes->isNotEmpty())
+                                <div class="text-[10px] font-semibold text-blue-300/80 mb-2">{{ $counter->purposes->pluck('name')->implode(' · ') }}</div>
+                            @else
+                                <div class="mb-2"></div>
+                            @endif
                             <div class="text-5xl font-black text-white tabular-nums leading-none" data-tv-counter-ticket>{{ $serving?->ticket_number ?? '—' }}</div>
                             <div data-tv-counter-paused class="{{ $counter->queue_paused ? '' : 'hidden' }} mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-yellow-300">
                                 <i class="bi bi-pause-fill"></i> PAUSED

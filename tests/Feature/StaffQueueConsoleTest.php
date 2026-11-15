@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Events\QueueUpdated;
 use App\Models\Department;
+use App\Models\Purpose;
 use App\Models\QueueEntry;
 use App\Models\User;
 use App\Services\SmsService;
@@ -59,7 +60,7 @@ class StaffQueueConsoleTest extends TestCase
         $this->mock(SmsService::class, function (MockInterface $mock) use ($waiting, $department) {
             $mock->shouldReceive('sendNowServingNotification')
                 ->once()
-                ->with($waiting->phone_number, $waiting->ticket_number, $department->name);
+                ->with($waiting->phone_number, $waiting->ticket_number, $department->name, 'Window 1');
         });
 
         $this->actingAs($staff, 'web')
@@ -217,6 +218,121 @@ class StaffQueueConsoleTest extends TestCase
         $this->assertTrue($counter->queue_paused);
     }
 
+    public function test_serving_window_card_shows_auto_skip_countdown(): void
+    {
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $entry = $this->createEntry($department, '003', 'serving');
+        $entry->update([
+            'counter_id' => $counter->id,
+            'served_at' => now()->subMinute(),
+        ]);
+
+        $html = $this->actingAs($staff, 'web')
+            ->get(route('admin.queue'))
+            ->assertOk()
+            ->assertSee('data-auto-skip', false)
+            ->assertSee('Auto-skip in', false)
+            ->getContent();
+
+        $this->assertStringContainsString('data-served-at="'.$entry->fresh()->served_at->timestamp.'"', $html);
+    }
+
+    public function test_paused_window_shows_auto_skip_paused(): void
+    {
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $counter->update(['queue_paused' => true]);
+        $entry = $this->createEntry($department, '004', 'serving');
+        $entry->update(['counter_id' => $counter->id]);
+
+        $this->actingAs($staff, 'web')
+            ->get(route('admin.queue'))
+            ->assertOk()
+            ->assertSee('data-auto-skip', false)
+            ->assertSee('data-paused="1"', false)
+            ->assertSee('Auto-skip paused', false);
+    }
+
+    public function test_waiting_list_payload_includes_served_at_for_countdown(): void
+    {
+        $department = Department::where('name', 'Cashier')->firstOrFail();
+        $staff = $this->createStaff($department);
+        $counter = $department->counters()->where('name', 'Window 1')->firstOrFail();
+        $entry = $this->createEntry($department, '005', 'serving');
+        $entry->update([
+            'counter_id' => $counter->id,
+            'served_at' => now()->subMinutes(2),
+        ]);
+
+        $response = $this->actingAs($staff, 'web')
+            ->getJson(route('admin.waitingList', ['department_id' => $department->id]))
+            ->assertOk()
+            ->assertJsonStructure(['currents' => [['id', 'ticket_number', 'served_at_ts']]]);
+
+        $this->assertSame($entry->fresh()->served_at->timestamp, $response->json('currents.0.served_at_ts'));
+    }
+
+    public function test_call_next_is_disabled_when_no_waiting_ticket_matches_the_window(): void
+    {
+        $department = Department::create(['name' => 'Admission']);
+        $window = $department->counters()->create(['name' => 'Window 1']);
+        $clearance = Purpose::create(['name' => 'Clearance', 'is_active' => true]);
+        $payment = Purpose::create(['name' => 'Payment', 'is_active' => true]);
+        $window->purposes()->attach($clearance->id);
+        $department->counters()->create(['name' => 'Window 2'])->purposes()->attach($payment->id);
+
+        // Only a ticket for another window's purpose waits: Window 1 cannot call it.
+        $this->createPurposeEntry($department, '001', 'Payment', $payment->id);
+
+        $staff = $this->createStaff($department);
+
+        $this->actingAs($staff, 'web')
+            ->get(route('admin.queue', ['department_id' => $department->id]))
+            ->assertOk()
+            ->assertSee('data-empty="1"', false)
+            ->assertSee('No waiting tickets match this window', false);
+
+        // A matching ticket enables the button again.
+        $this->createPurposeEntry($department, '002', 'Clearance', $clearance->id);
+
+        $this->actingAs($staff, 'web')
+            ->get(route('admin.queue', ['department_id' => $department->id]))
+            ->assertOk()
+            ->assertSee('data-empty="0"', false);
+    }
+
+    public function test_waiting_list_reports_eligible_counts_per_window(): void
+    {
+        $department = Department::create(['name' => 'Admission']);
+        $window = $department->counters()->create(['name' => 'Window 1']);
+        $clearance = Purpose::create(['name' => 'Clearance', 'is_active' => true]);
+        $payment = Purpose::create(['name' => 'Payment', 'is_active' => true]);
+        $window->purposes()->attach($clearance->id);
+        $department->counters()->create(['name' => 'Window 2'])->purposes()->attach($payment->id);
+        $staff = $this->createStaff($department);
+
+        $this->createPurposeEntry($department, '001', 'Payment', $payment->id);
+
+        $this->actingAs($staff, 'web')
+            ->getJson(route('admin.waitingList', ['department_id' => $department->id]))
+            ->assertOk()
+            ->assertJsonPath('eligible_counts.'.$window->id, 0);
+
+        // Matching + free-text ("Other"): both windows hold one purpose, so each
+        // takes its own tickets plus the free-text one.
+        $this->createPurposeEntry($department, '002', 'Clearance', $clearance->id);
+        $this->createPurposeEntry($department, '003', 'Scholarship form', null);
+
+        $this->actingAs($staff, 'web')
+            ->getJson(route('admin.waitingList', ['department_id' => $department->id]))
+            ->assertOk()
+            ->assertJsonPath('eligible_counts.'.$window->id, 2)
+            ->assertJsonPath('waiting_count', 3);
+    }
+
     private function createStaff(Department $department): User
     {
         return User::create([
@@ -240,6 +356,20 @@ class StaffQueueConsoleTest extends TestCase
             'phone_number' => '09170000998',
             'status' => $status,
             'served_at' => $status === 'serving' ? now() : null,
+            'department_id' => $department->id,
+            'queue_date' => today(),
+        ]);
+    }
+
+    private function createPurposeEntry(Department $department, string $ticket, string $purpose, ?int $purposeId): QueueEntry
+    {
+        return QueueEntry::create([
+            'ticket_number' => $ticket,
+            'name' => 'Queue Guest',
+            'purpose' => $purpose,
+            'purpose_id' => $purposeId,
+            'phone_number' => '09170000999',
+            'status' => 'waiting',
             'department_id' => $department->id,
             'queue_date' => today(),
         ]);

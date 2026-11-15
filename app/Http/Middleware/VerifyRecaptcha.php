@@ -12,8 +12,8 @@ class VerifyRecaptcha
     /**
      * Verify the reCAPTCHA v3 token submitted with the request.
      *
-     * If RECAPTCHA_SITE_KEY is not configured (e.g. local dev), the check is
-     * skipped so development is never blocked.
+     * The check is skipped only outside production when no key is configured.
+     * In production a missing key blocks the request (fail closed).
      */
     public function handle(Request $request, Closure $next): mixed
     {
@@ -21,6 +21,12 @@ class VerifyRecaptcha
 
         // Skip verification when not configured (local / test environments)
         if (empty($secretKey)) {
+            if (app()->environment('production')) {
+                Log::critical('[reCAPTCHA] RECAPTCHA_SECRET_KEY is not set in production.');
+
+                return $this->fail($request, 'reCAPTCHA is not configured. Please contact the administrator.');
+            }
+
             return $next($request);
         }
 

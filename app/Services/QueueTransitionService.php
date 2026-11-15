@@ -17,8 +17,6 @@ class QueueTransitionService
             $lockedDepartment = $this->lockDepartment($department);
             $this->ensureOperational($lockedDepartment);
 
-            $counter = $this->resolveFreeCounter($lockedDepartment, $counterId);
-
             // One staff = one serving at a time within the department.
             if ($actor && $actor->role === 'staff') {
                 $alreadyServing = $this->todayQueue($lockedDepartment)
@@ -32,14 +30,63 @@ class QueueTransitionService
                 }
             }
 
-            $next = $this->todayQueue($lockedDepartment)
-                ->where('status', 'waiting')
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->first();
+            if ($counterId) {
+                $counter = $this->resolveFreeCounter($lockedDepartment, $counterId);
+                $next = $this->pickNextFor($lockedDepartment, $counter);
 
-            if (! $next) {
-                throw new \LogicException('No students waiting in this department.');
+                if (! $next) {
+                    throw new \LogicException(
+                        $this->todayQueue($lockedDepartment)->where('status', 'waiting')->exists()
+                            ? "No students waiting for {$counter->name}'s services."
+                            : 'No students waiting in this department.'
+                    );
+                }
+            } else {
+                // Legacy path (no explicit counter): walk free counters in
+                // order and take the first one with an eligible ticket.
+                $free = $this->freeCounters($lockedDepartment);
+
+                if ($free->isEmpty() && ! $this->hasAnyCounter($lockedDepartment)) {
+                    $free = collect([Counter::create([
+                        'department_id' => $lockedDepartment->id,
+                        'name' => 'Window 1',
+                        'is_active' => true,
+                    ])]);
+                }
+
+                if ($free->isEmpty()) {
+                    throw new \LogicException('All counters are currently serving. Complete or skip a ticket before calling the next student.');
+                }
+
+                // Legacy rows without counter_id occupy the default counter.
+                $legacyServing = $this->todayQueue($lockedDepartment)
+                    ->where('status', 'serving')
+                    ->whereNull('counter_id')
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($legacyServing) {
+                    throw new \LogicException('Complete or skip the current ticket before calling the next student.');
+                }
+
+                $counter = null;
+                $next = null;
+                foreach ($free as $candidate) {
+                    $next = $this->pickNextFor($lockedDepartment, $candidate);
+
+                    if ($next) {
+                        $counter = $candidate;
+                        break;
+                    }
+                }
+
+                if (! $next) {
+                    throw new \LogicException(
+                        $this->todayQueue($lockedDepartment)->where('status', 'waiting')->exists()
+                            ? 'No students waiting match any free window.'
+                            : 'No students waiting in this department.'
+                    );
+                }
             }
 
             $next->update([
@@ -173,17 +220,13 @@ class QueueTransitionService
                 $skipped[] = $serving->fresh();
             }
 
-            // Refill every free counter in order.
+            // Refill every free counter in order (purpose-aware).
             $called = [];
             foreach ($this->freeCounters($lockedDepartment) as $counter) {
-                $next = $this->todayQueue($lockedDepartment)
-                    ->where('status', 'waiting')
-                    ->orderBy('id')
-                    ->lockForUpdate()
-                    ->first();
+                $next = $this->pickNextFor($lockedDepartment, $counter);
 
                 if (! $next) {
-                    break;
+                    continue;
                 }
 
                 $next->update([
@@ -304,13 +347,13 @@ class QueueTransitionService
         });
     }
 
-    private function resolveFreeCounter(Department $lockedDepartment, ?int $counterId = null): \App\Models\Counter
+    private function resolveFreeCounter(Department $lockedDepartment, ?int $counterId = null): Counter
     {
         $busyCounterIds = $this->todayQueue($lockedDepartment)
-            ->where('status', 'serving')
-            ->whereNotNull('counter_id')
-            ->pluck('counter_id')
-            ->all();
+                ->where('status', 'serving')
+                ->whereNotNull('counter_id')
+                ->pluck('counter_id')
+                ->all();
 
         if ($counterId) {
             $counter = \App\Models\Counter::whereKey($counterId)
@@ -385,6 +428,128 @@ class QueueTransitionService
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
+    }
+
+    private function hasAnyCounter(Department $department): bool
+    {
+        return \App\Models\Counter::where('department_id', $department->id)->exists();
+    }
+
+    /**
+     * Waiting tickets this window may call:
+     *  - window has no assigned purposes (general window) → everything
+     *  - ticket purpose is one of the window's assigned purposes
+     *
+     * Strict routing: a purpose-scoped window never takes tickets whose
+     * purpose (or free-text "Other") is not assigned to it — including
+     * purposes assigned to no window at all. Only a general window can
+     * take those.
+     */
+    private function eligibleWaiting(Department $department, Counter $counter)
+    {
+        $query = $this->todayQueue($department)->where('status', 'waiting');
+
+        $windowPurposeIds = $counter->purposeIds();
+
+        if ($windowPurposeIds === []) {
+            return $query;
+        }
+
+        // "Other" / unassigned purposes go to the overflow window(s).
+        if (in_array($counter->id, Counter::overflowIds($department->id), true)) {
+            $assigned = Counter::assignedPurposeIds($department->id);
+
+            return $query->where(function ($q) use ($windowPurposeIds, $assigned) {
+                $q->whereIn('purpose_id', $windowPurposeIds)
+                    ->orWhereNull('purpose_id')
+                    ->orWhereNotIn('purpose_id', $assigned ?: [0]);
+            });
+        }
+
+        return $query->whereIn('purpose_id', $windowPurposeIds);
+    }
+
+    /**
+     * A window with fewer assigned purposes than the busiest window in the
+     * department has spare capacity, so it may also take tickets of other
+     * windows' purposes once its own purposes have nothing waiting.
+     */
+    private function canHelpOthers(Counter $counter, ?int $maxPurposeCount = null): bool
+    {
+        $mine = count($counter->purposeIds());
+        if ($mine === 0) {
+            return false; // general window already takes everything
+        }
+
+        $max = $maxPurposeCount ?? DB::table('counter_purpose')
+            ->join('counters', 'counters.id', '=', 'counter_purpose.counter_id')
+            ->where('counters.department_id', $counter->department_id)
+            ->where('counters.is_active', true)
+            ->where('counters.queue_paused', false)
+            ->groupBy('counter_purpose.counter_id')
+            ->selectRaw('COUNT(*) as total')
+            ->pluck('total')
+            ->max();
+
+        return $mine < (int) $max;
+    }
+
+    /**
+     * Next ticket for a window: its own purposes first (oldest first), then,
+     * for a lighter window, any other waiting ticket.
+     */
+    private function pickNextFor(Department $department, Counter $counter): ?QueueEntry
+    {
+        $own = $this->eligibleWaiting($department, $counter)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+
+        if ($own || ! $this->canHelpOthers($counter)) {
+            return $own;
+        }
+
+        return $this->todayQueue($department)
+            ->where('status', 'waiting')
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /**
+     * How many waiting tickets each counter may call right now,
+     * keyed by counter id. Drives the per-window "Call Next" buttons.
+     */
+    public function eligibleWaitingCounts(Department $department, $counters): array
+    {
+        $waitingByPurpose = $this->todayQueue($department)
+            ->where('status', 'waiting')
+            ->groupBy('purpose_id')
+            ->selectRaw('purpose_id, COUNT(*) as total')
+            ->pluck('total', 'purpose_id');
+
+        $byPurpose = $waitingByPurpose
+            ->except('')
+            ->map(fn ($total) => (int) $total);
+        $totalWaiting = (int) $waitingByPurpose->sum();
+
+        $maxPurposeCount = collect($counters)->where('is_active', true)->where('queue_paused', false)
+            ->map(fn ($c) => count($c->purposeIds()))->max() ?? 0;
+
+        $assigned = Counter::assignedPurposeIds($department->id);
+        $unassignedCount = $totalWaiting - (int) $byPurpose->only($assigned)->sum();
+        $overflowIds = Counter::overflowIds($department->id);
+
+        $counts = [];
+        foreach ($counters as $counter) {
+            $purposeIds = $counter->purposeIds();
+            $counts[$counter->id] = ($purposeIds === [] || $this->canHelpOthers($counter, $maxPurposeCount))
+                ? $totalWaiting
+                : (int) $byPurpose->only($purposeIds)->sum()
+                    + (in_array($counter->id, $overflowIds, true) ? $unassignedCount : 0);
+        }
+
+        return $counts;
     }
 
     private function lockDepartment(Department $department): Department

@@ -92,6 +92,15 @@
                                             <i class="bi bi-check-lg"></i> Complete
                                         </button>
                                     </form>` : `<span class="text-[11px] font-semibold text-slate-400">Monitoring view — queue actions are for staff only</span>`;
+                                const counterPaused = !!(counterState[String(counterId)] && counterState[String(counterId)].queue_paused);
+                                const skipPaused = (data.queue_paused || !data.department_active || counterPaused) ? '1' : '0';
+                                const autoSkipBadge = s.served_at_ts ? `
+                                    <div class="mt-2 flex justify-center">
+                                        <span data-auto-skip data-served-at="${escapeHtml(String(s.served_at_ts))}" data-paused="${skipPaused}" class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full ${skipPaused === '1' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500'}">
+                                            <i class="bi bi-hourglass-split"></i>
+                                            <span data-auto-skip-label>${skipPaused === '1' ? 'Auto-skip paused' : 'Auto-skip in 3:00'}</span>
+                                        </span>
+                                    </div>` : '';
                                 if (status) {
                                     status.innerText = 'SERVING';
                                     status.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700';
@@ -107,17 +116,24 @@
                                             </span>
                                             ${staffName ? `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-xs font-semibold px-3 py-1 rounded-full"><i class="bi bi-person"></i> ${staffName}</span>` : ''}
                                         </div>
+                                        ${autoSkipBadge}
                                     </div>
                                     <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
                                         ${actionButtons}
                                     </div>`;
                             } else {
+                                const eligibleCount = data.eligible_counts && data.eligible_counts[String(counterId)] !== undefined
+                                    ? data.eligible_counts[String(counterId)]
+                                    : data.waiting_count;
+                                const noMatchTitle = eligibleCount === 0 && data.waiting_count > 0
+                                    ? ' title="No waiting tickets match this window&#39;s assigned purposes"'
+                                    : '';
                                 const callBtn = USER_ROLE !== 'admin' ? `
                                     <form action="${CALL_NEXT_URL}" method="POST" class="mt-3">
                                         <input type="hidden" name="_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="department_id" value="${SELECTED_DEPARTMENT_ID}">
                                         <input type="hidden" name="counter_id" value="${counterId}">
-                                        <button type="submit" data-queue-running data-empty="${data.waiting_count === 0 ? '1' : '0'}" data-current="0" data-counter-id="${counterId}" ${!data.department_active || data.queue_paused || (counterState[String(counterId)] && counterState[String(counterId)].queue_paused) || data.waiting_count === 0 ? 'disabled' : ''}
+                                        <button type="submit" data-queue-running data-empty="${eligibleCount === 0 ? '1' : '0'}" data-current="0" data-counter-id="${counterId}" ${!data.department_active || data.queue_paused || (counterState[String(counterId)] && counterState[String(counterId)].queue_paused) || eligibleCount === 0 ? 'disabled' : ''}${noMatchTitle}
                                             class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                             <i class="bi bi-play-circle-fill"></i> Call Next here
                                         </button>
@@ -135,6 +151,7 @@
                                     </div>`;
                             }
                         });
+                        if (typeof updateAutoSkipTimer === 'function') updateAutoSkipTimer();
                     } else if (data.current) {
                         // Fallback: no counter cards rendered (legacy view).
                         if (typeof updateAutoSkipTimer === 'function') updateAutoSkipTimer();

@@ -50,7 +50,10 @@ class DepartmentQueueAccessTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('departments', ['name' => 'Registrar']);
-        $this->get(route('admin.departments.index'))->assertOk()->assertSee('Registrar');
+        $this->get(route('admin.departments.index'))
+            ->assertOk()
+            ->assertSee('Registrar')
+            ->assertSee('Assign purposes');
         $this->get(route('admin.reports'))->assertOk();
     }
 
@@ -247,6 +250,63 @@ class DepartmentQueueAccessTest extends TestCase
                 && $summary['no_response'] === 25)
             ->assertViewHas('entries', fn ($entries) => $entries->perPage() === 50
                 && $entries->total() === 55);
+    }
+
+    public function test_staff_page_lists_searches_and_filters_staff(): void
+    {
+        $admin = $this->createUser('admin');
+        $cashier = Department::where('name', 'Cashier')->firstOrFail();
+        $registrar = Department::create(['name' => 'Registrar']);
+
+        $cashierStaff = $this->createUser('staff', $cashier);
+        $cashierStaff->update(['name' => 'Cora Cashier']);
+        $registrarStaff = $this->createUser('staff', $registrar);
+        $registrarStaff->update(['name' => 'Rey Registrar']);
+        $inactive = $this->createUser('staff', $registrar, false);
+        $inactive->update(['name' => 'Ina Inactive']);
+
+        $this->actingAs($admin, 'web')->get(route('admin.staff.index'))
+            ->assertOk()
+            ->assertSee('Cora Cashier')
+            ->assertSee('Rey Registrar');
+
+        $this->get(route('admin.staff.index', ['q' => 'Rey']))
+            ->assertOk()
+            ->assertSee('Rey Registrar')
+            ->assertDontSee('Cora Cashier');
+
+        $this->get(route('admin.staff.index', ['department_id' => $cashier->id]))
+            ->assertOk()
+            ->assertSee('Cora Cashier')
+            ->assertDontSee('Rey Registrar');
+
+        $this->get(route('admin.staff.index', ['status' => 'inactive']))
+            ->assertOk()
+            ->assertSee('Ina Inactive')
+            ->assertDontSee('Rey Registrar');
+    }
+
+    public function test_creating_staff_redirects_to_the_staff_page_and_departments_page_hides_staff_list(): void
+    {
+        $admin = $this->createUser('admin');
+        $department = Department::create(['name' => 'Registrar']);
+        $member = $this->createUser('staff', $department);
+        $member->update(['name' => 'Rey Registrar']);
+
+        $this->actingAs($admin, 'web')->post(route('admin.staff.store'), [
+            'department_id' => $department->id,
+            'name' => 'New Staff',
+            'email' => 'new-staff@example.com',
+            'phone_number' => '09170009999',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertRedirect(route('admin.staff.index'));
+
+        $this->get(route('admin.departments.index'))
+            ->assertOk()
+            ->assertSee('2 staff')
+            ->assertDontSee('Rey Registrar')
+            ->assertDontSee('Add Staff');
     }
 
     private function createUser(string $role, ?Department $department = null, bool $active = true): User

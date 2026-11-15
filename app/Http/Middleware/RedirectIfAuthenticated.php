@@ -37,7 +37,11 @@ class RedirectIfAuthenticated
                     return redirect()->route('student.index');
                 }
 
-                return in_array($user->role, ['admin', 'staff'], true)
+                if ($user->role === 'admin') {
+                    return redirect()->route('admin.overview');
+                }
+
+                return $user->role === 'staff'
                     ? redirect()->route('admin.index')
                     : redirect()->route('home');
             }
