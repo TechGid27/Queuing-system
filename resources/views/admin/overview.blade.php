@@ -109,7 +109,10 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('admin.departments.index') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors">
-                <i class="bi bi-building"></i> Departments & Staff
+                <i class="bi bi-building"></i> Departments & Windows
+            </a>
+            <a href="{{ route('admin.staff.index') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors">
+                <i class="bi bi-people"></i> Staff
             </a>
             <a href="{{ route('admin.reports') }}" class="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors">
                 <i class="bi bi-bar-chart-line"></i> Reports

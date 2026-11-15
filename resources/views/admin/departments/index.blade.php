@@ -1,11 +1,11 @@
 @extends('layouts.app')
-@section('page-title', 'Departments & Staff')
+@section('page-title', 'Departments & Windows')
 
 @section('content')
 <div class="flex flex-col gap-5">
     <div>
-        <h1 class="text-xl font-black text-slate-900">Departments & Staff</h1>
-        <p class="text-sm text-slate-400 mt-1">Create department queues and assign each staff account to one department.</p>
+        <h1 class="text-xl font-black text-slate-900">Departments & Windows</h1>
+        <p class="text-sm text-slate-400 mt-1">Create department queues, manage their windows, and assign purposes to each window.</p>
     </div>
 
     @if($errors->any())
@@ -14,8 +14,8 @@
         </div>
     @endif
 
-    <div class="grid grid-cols-1 xl:grid-cols-5 gap-4">
-        <section class="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-5">
+    <div class="grid grid-cols-1 gap-4">
+        <section class="bg-white rounded-2xl border border-slate-200 p-5">
             <h2 class="text-sm font-bold text-slate-800 mb-4">Add Department</h2>
             <form action="{{ route('admin.departments.store') }}" method="POST" class="space-y-4">
                 @csrf
@@ -37,45 +37,6 @@
             </form>
         </section>
 
-        <section class="xl:col-span-3 bg-white rounded-2xl border border-slate-200 p-5">
-            <h2 class="text-sm font-bold text-slate-800 mb-4">Add Staff Account</h2>
-            <form action="{{ route('admin.staff.store') }}" method="POST" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                @csrf
-                <div class="sm:col-span-2">
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Department</label>
-                    <select name="department_id" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                        <option value="">Choose department...</option>
-                        @foreach($departments->where('is_active', true) as $department)
-                            <option value="{{ $department->id }}" @selected(old('department_id') == $department->id)>{{ $department->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Full Name</label>
-                    <input type="text" name="name" value="{{ old('name') }}" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
-                    <input type="email" name="email" value="{{ old('email') }}" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Phone Number</label>
-                    <input type="text" name="phone_number" value="{{ old('phone_number') }}" required maxlength="11" inputmode="numeric" placeholder="09xxxxxxxxx"
-                        class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Temporary Password</label>
-                    <input type="password" name="password" required minlength="8" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                </div>
-                <div class="sm:col-span-2">
-                    <label class="block text-xs font-semibold text-slate-600 mb-1.5">Confirm Password</label>
-                    <input type="password" name="password_confirmation" required minlength="8" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                </div>
-                <button type="submit" class="sm:col-span-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-                    <i class="bi bi-person-plus-fill"></i> Add Staff
-                </button>
-            </form>
-        </section>
     </div>
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -89,7 +50,10 @@
                                 {{ $department->is_active ? 'ACTIVE' : 'INACTIVE' }}
                             </span>
                         </div>
-                        <p class="text-xs text-slate-400 mt-1">{{ $department->staff->count() }} staff · {{ $department->counters->count() }} counters · {{ $department->queue_entries_count }} total tickets</p>
+                        <p class="text-xs text-slate-400 mt-1">
+                            <a href="{{ route('admin.staff.index', ['department_id' => $department->id]) }}" class="underline hover:text-slate-600">{{ $department->staff_count }} staff</a>
+                            · {{ $department->counters->count() }} counters · {{ $department->queue_entries_count }} total tickets
+                        </p>
                     </div>
                     <form action="{{ route('admin.departments.status', $department) }}" method="POST"
                         onsubmit="return confirm('{{ $department->is_active ? 'Deactivate this department and block its staff queue access?' : 'Activate this department?' }}')">
@@ -146,6 +110,42 @@
                                                 <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer hover:bg-slate-100 {{ $takenByOther ? 'opacity-50 cursor-not-allowed' : '' }}" data-purpose-label>
                                                     <input type="checkbox" name="purpose_ids[]" value="{{ $purpose->id }}"
                                                         class="rounded border-slate-300 text-primary focus:ring-primary/30"
+                                                        @checked(in_array($purpose->id, $counter->purposes->pluck('id')->all()))
+                                                        @disabled($takenByOther)>
+                                                    {{ $purpose->name }}
+                                                </label>
+                                            @empty
+                                                <span class="text-[11px] text-slate-400">No purposes yet — create them under Purposes first.</span>
+                                            @endforelse
+                                        </div>
+                                        @error('purpose_ids')<p class="text-[11px] text-red-600 mb-1">{{ $message }}</p>@enderror
+                                        <button type="submit" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Save purposes</button>
+                                        <span class="text-[10px] text-slate-400 ml-1.5">Leave all unchecked = serves everything</span>
+                                    </form>
+                                </details>
+                            </div>
+                        @empty
+                            <span class="text-xs text-slate-400">No counters yet.</span>
+                        @endforelse
+                    </div>
+                    <form action="{{ route('admin.counters.store') }}" method="POST" class="flex gap-2">
+                        @csrf
+                        <input type="hidden" name="department_id" value="{{ $department->id }}">
+                        <input type="text" name="name" required maxlength="255" placeholder="e.g. Window {{ $department->counters->count() + 1 }}"
+                            class="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                        <button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Add</button>
+                    </form>
+                </div>
+
+            </section>
+        @empty
+            <div class="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400">
+                No departments created yet.
+            </div>
+        @endforelse
+    </div>
+</div>
+@endsection
 
 @push('scripts')
 <script>
@@ -179,60 +179,3 @@
     })();
 </script>
 @endpush
-                                                        @checked(in_array($purpose->id, $counter->purposes->pluck('id')->all()))
-                                                        @disabled($takenByOther)>
-                                                    {{ $purpose->name }}
-                                                </label>
-                                            @empty
-                                                <span class="text-[11px] text-slate-400">No purposes yet — create them under Purposes first.</span>
-                                            @endforelse
-                                        </div>
-                                        @error('purpose_ids')<p class="text-[11px] text-red-600 mb-1">{{ $message }}</p>@enderror
-                                        <button type="submit" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Save purposes</button>
-                                        <span class="text-[10px] text-slate-400 ml-1.5">Leave all unchecked = serves everything</span>
-                                    </form>
-                                </details>
-                            </div>
-                        @empty
-                            <span class="text-xs text-slate-400">No counters yet.</span>
-                        @endforelse
-                    </div>
-                    <form action="{{ route('admin.counters.store') }}" method="POST" class="flex gap-2">
-                        @csrf
-                        <input type="hidden" name="department_id" value="{{ $department->id }}">
-                        <input type="text" name="name" required maxlength="255" placeholder="e.g. Window {{ $department->counters->count() + 1 }}"
-                            class="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
-                        <button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Add</button>
-                    </form>
-                </div>
-
-                <div class="divide-y divide-slate-50">
-                    @forelse($department->staff as $staff)
-                        <div class="px-5 py-3 flex items-center justify-between gap-3">
-                            <div class="min-w-0">
-                                <div class="text-sm font-semibold text-slate-800 truncate">{{ $staff->name }}</div>
-                                <div class="text-xs text-slate-400 truncate">{{ $staff->email }} · {{ $staff->phone_number }}</div>
-                            </div>
-                            <form action="{{ route('admin.staff.status', $staff) }}" method="POST" class="shrink-0"
-                                onsubmit="return confirm('{{ $staff->is_active ? 'Deactivate this staff account?' : 'Activate this staff account?' }}')">
-                                @csrf
-                                @method('PATCH')
-                                <input type="hidden" name="is_active" value="{{ $staff->is_active ? 0 : 1 }}">
-                                <button type="submit" class="text-[11px] font-bold px-3 py-1.5 rounded-lg border {{ $staff->is_active ? 'border-red-200 text-red-600 hover:bg-red-50' : 'border-green-200 text-green-700 hover:bg-green-50' }}">
-                                    {{ $staff->is_active ? 'Deactivate' : 'Activate' }}
-                                </button>
-                            </form>
-                        </div>
-                    @empty
-                        <div class="px-5 py-8 text-center text-sm text-slate-400">No staff assigned.</div>
-                    @endforelse
-                </div>
-            </section>
-        @empty
-            <div class="xl:col-span-2 bg-white rounded-2xl border border-slate-200 p-10 text-center text-slate-400">
-                No departments created yet.
-            </div>
-        @endforelse
-    </div>
-</div>
-@endsection

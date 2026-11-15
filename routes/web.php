@@ -7,6 +7,7 @@ use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\PurposeController;
 use App\Http\Controllers\QueueController;
 use App\Http\Controllers\StaffController;
+use App\Http\Controllers\StaffManagementController;
 use Illuminate\Support\Facades\Route;
 
 // ─── Public Queue Display ─────────────────────────────────────────────────────
@@ -78,13 +79,14 @@ Route::middleware(['auth:web', 'is_admin'])->group(function () {
     Route::get('/admin/departments', [DepartmentController::class, 'index'])->name('admin.departments.index');
     Route::post('/admin/departments', [DepartmentController::class, 'store'])->name('admin.departments.store');
     Route::patch('/admin/departments/{department}/status', [DepartmentController::class, 'updateStatus'])->name('admin.departments.status');
-    Route::post('/admin/staff', [DepartmentController::class, 'storeStaff'])->name('admin.staff.store');
-    Route::patch('/admin/staff/{staff}/status', [DepartmentController::class, 'updateStaffStatus'])->name('admin.staff.status');
+    Route::get('/admin/staff', [StaffManagementController::class, 'index'])->name('admin.staff.index');
+    Route::post('/admin/staff', [StaffManagementController::class, 'store'])->name('admin.staff.store');
+    Route::patch('/admin/staff/{staff}/status', [StaffManagementController::class, 'updateStatus'])->name('admin.staff.status');
     Route::post('/admin/counters', [DepartmentController::class, 'storeCounter'])->name('admin.counters.store');
     Route::patch('/admin/counters/{counter}/status', [DepartmentController::class, 'updateCounterStatus'])->name('admin.counters.status');
+    Route::patch('/admin/counters/{counter}/purposes', [DepartmentController::class, 'updateCounterPurposes'])->name('admin.counters.purposes');
 
     Route::resource('/admin/purposes', PurposeController::class)
-    Route::patch('/admin/counters/{counter}/purposes', [DepartmentController::class, 'updateCounterPurposes'])->name('admin.counters.purposes');
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([
             'index' => 'admin.purposes.index',

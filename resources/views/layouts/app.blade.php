@@ -73,6 +73,17 @@
         .badge-live { animation: pulse-live 2s infinite; }
         @keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:.5} }
         .sidebar-link { transition: background .15s, color .15s; }
+        .sidebar-heading {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+            color: rgb(100 116 139);
+            padding: 0 .5rem .5rem;
+            margin-bottom: .5rem;
+            border-bottom: 1px solid rgba(148, 163, 184, .18);
+        }
+        .sidebar-heading--spaced { margin-top: 1.5rem; }
         [x-cloak] { display: none !important; }
     </style>
     @yield('styles')
@@ -109,8 +120,7 @@
     {{-- Nav --}}
     <nav class="flex-1 px-3 py-4 overflow-y-auto">
         @if(auth()->user()->role === 'staff' || auth()->user()->role === 'admin')
-            <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2">Management</div>
-            <hr class="mb-5">
+            <div class="sidebar-heading">Management</div>
             <a href="{{ auth()->user()->role === 'admin' ? route('admin.overview') : route('admin.queue', $departmentRouteParams) }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
                       {{ request()->routeIs('admin.overview', 'admin.queue', 'admin.index') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
@@ -132,16 +142,18 @@
             @endif
           
             @if(auth()->user()->role === 'admin')
-            <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-5">Staff Management</div>
-            <hr class="mb-5">
             <a href="{{ route('admin.departments.index') }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
-                      {{ request()->routeIs('admin.departments.*', 'admin.staff.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
-                <i class="bi bi-building w-4 text-center"></i> Departments & Staff
+                      {{ request()->routeIs('admin.departments.*', 'admin.counters.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-building w-4 text-center"></i> Departments & Windows
+            </a>
+            <a href="{{ route('admin.staff.index') }}"
+               class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
+                      {{ request()->routeIs('admin.staff.*') ? 'bg-primary text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200' }}">
+                <i class="bi bi-people w-4 text-center"></i> Staff
             </a>
             @endif
-            <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-2 mt-5">Analytics</div>
-            <hr class="mb-5">
+            <div class="sidebar-heading sidebar-heading--spaced">Analytics</div>
            @if(auth()->user()->role !== 'admin')
             <a href="{{ route('admin.reports', $departmentRouteParams) }}"
                class="sidebar-link flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium mb-0.5
