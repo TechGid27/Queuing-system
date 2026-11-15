@@ -91,6 +91,78 @@ class GuestQueueFlowTest extends TestCase
         ]);
     }
 
+    public function test_returning_verified_guest_gets_login_otp_instead_of_error(): void
+    {
+        $sentOtp = null;
+        $this->mock(SmsService::class, function (MockInterface $mock) use (&$sentOtp) {
+            $mock->shouldReceive('sendOtp')->once()->andReturnUsing(function ($phone, $otp) use (&$sentOtp) {
+                $sentOtp = $otp;
+            });
+        });
+
+        $verifiedAt = now()->subDay();
+        $guest = Guest::create([
+            'student_id' => '2026-00999',
+            'phone_number' => '09171234570',
+            'phone_verified_at' => $verifiedAt,
+            'role' => 'student',
+        ]);
+
+        $response = $this->post(route('register.post'), [
+            'student_id' => '2026-00999',
+            'phone_number' => '09171234570',
+        ]);
+
+        // No dead-end error — straight to the OTP login screen.
+        $response->assertRedirect(route('student.verify.show'));
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionHas('otp_account_type', 'guest');
+        $response->assertSessionHas('otp_phone', '09171234570');
+
+        $this->assertNotNull($sentOtp);
+        $this->assertDatabaseHas('phone_otps', [
+            'phone_number' => '09171234570',
+            'purpose' => 'guest_verification',
+        ]);
+
+        // Verification status is untouched by the login request.
+        $this->assertTrue($guest->fresh()->isPhoneVerified());
+    }
+
+    public function test_returning_verified_guest_can_log_back_in_with_otp(): void
+    {
+        $verifiedAt = now()->subDay()->startOfSecond();
+        $guest = Guest::create([
+            'student_id' => '2026-00999',
+            'phone_number' => '09171234571',
+            'phone_verified_at' => $verifiedAt,
+            'role' => 'student',
+        ]);
+        PhoneOtp::create([
+            'phone_number' => $guest->phone_number,
+            'purpose' => 'guest_verification',
+            'otp' => Hash::make('654321'),
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $response = $this->post(route('student.verify'), [
+            'phone' => $guest->phone_number,
+            'account_type' => 'guest',
+            'otp' => '654321',
+        ]);
+
+        $response->assertRedirect(route('student.index'));
+        $this->assertAuthenticatedAs($guest, 'student');
+        $this->assertGuest('web');
+
+        // Original verification timestamp is preserved.
+        $this->assertEquals($verifiedAt, $guest->fresh()->phone_verified_at);
+        $this->assertDatabaseMissing('phone_otps', [
+            'phone_number' => $guest->phone_number,
+            'purpose' => 'guest_verification',
+        ]);
+    }
+
     public function test_verified_guest_can_join_the_queue_with_guest_ownership(): void
     {
         Event::fake([QueueUpdated::class]);
