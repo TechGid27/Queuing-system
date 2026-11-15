@@ -548,6 +548,18 @@ class StaffController extends Controller
 
     public function waitingList(Request $request)
     {
+        // The dashboard polls this endpoint every few seconds. Run the
+        // auto-skip here too (throttled) so expired tickets do not sit at
+        // "Auto-skipping..." until the next scheduler tick, or forever when
+        // the scheduler is not running.
+        if (Cache::add('queue_auto_skip_lock', 1, 10)) {
+            try {
+                \Illuminate\Support\Facades\Artisan::call('queue:auto-skip');
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         $department = $this->resolveDepartment($request);
         $queue = $this->todayQueue($department);
         $waitingStudents = (clone $queue)
@@ -579,6 +591,9 @@ class StaffController extends Controller
             'serving_count' => $currentServings->count(),
             'counters' => $counters,
             'busy_counter_ids' => $busyCounterIds,
+            'eligible_counts' => $department
+                ? $this->transitions->eligibleWaitingCounts($department, $counters)
+                : [],
             'waiting_count' => (clone $queue)->where('status', 'waiting')->count(),
             'pagination' => [
                 'current_page' => $waitingStudents->currentPage(),
@@ -591,9 +606,6 @@ class StaffController extends Controller
             'auto_pause_enabled' => (bool) ($department?->auto_pause_enabled ?? true),
             'pause_mode' => ($department?->auto_pause_enabled ?? true) ? 'auto' : 'manual',
             'avg_serve_mins' => self::getAvgServeMinutes($department?->id),
-            'eligible_counts' => $department
-                ? $this->transitions->eligibleWaitingCounts($department, $counters)
-                : [],
             'lunch_break_start' => DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00',
             'lunch_break_end' => DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30',
         ]);
