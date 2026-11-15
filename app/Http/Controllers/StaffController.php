@@ -469,7 +469,7 @@ class StaffController extends Controller
         }
 
         if ($nextStudent->phone_number) {
-            $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name);
+            $this->sms->sendNowServingNotification($nextStudent->phone_number, $nextStudent->ticket_number, $department->name, $nextStudent->counter?->name);
         }
 
         $upNext = QueueEntry::where('department_id', $department->id)
