@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 class StaffController extends Controller
 {
     private SmsService $sms;
+
     private QueueTransitionService $transitions;
 
     public function __construct(SmsService $sms, QueueTransitionService $transitions)
@@ -139,7 +140,7 @@ class StaffController extends Controller
         $skippedCount = (clone $queue)->where('status', 'no_response')->count();
         $waitingStudents = (clone $queue)->where('status', 'waiting')->orderBy('id')->paginate(10)->withQueryString();
         $counters = $selectedDepartment
-            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)->orderBy('id')->get()
+            ? \App\Models\Counter::where('department_id', $selectedDepartment->id)->with('purposes')->orderBy('id')->get()
             : collect();
         // Backward compat: legacy serving rows without counter_id display on the first active counter.
         $firstCounter = $counters->firstWhere('is_active', true) ?? $counters->first();
@@ -152,6 +153,9 @@ class StaffController extends Controller
             }
         }
         $busyCounterIds = $currentServings->pluck('counter_id')->filter()->all();
+        $eligibleCounts = $selectedDepartment
+            ? $this->transitions->eligibleWaitingCounts($selectedDepartment, $counters)
+            : [];
 
         $user = Auth::guard('web')->user();
         $myServing = ($user && $user->role === 'staff') ? $currentServings->firstWhere('served_by', $user->id) : null;
@@ -182,7 +186,8 @@ class StaffController extends Controller
             'lunchBreakEnd',
             'selectedDepartment',
             'departments',
-            'isAdmin'
+            'isAdmin',
+            'eligibleCounts'
         ));
     }
 
@@ -561,7 +566,7 @@ class StaffController extends Controller
             ]));
         $currentServing = $currentServings->first();
         $counters = $department
-            ? \App\Models\Counter::where('department_id', $department->id)->orderBy('id')->get()
+            ? \App\Models\Counter::where('department_id', $department->id)->with('purposes')->orderBy('id')->get()
             : collect();
         $busyCounterIds = (clone $queue)->where('status', 'serving')->whereNotNull('counter_id')->pluck('counter_id')->all();
 
@@ -586,6 +591,9 @@ class StaffController extends Controller
             'auto_pause_enabled' => (bool) ($department?->auto_pause_enabled ?? true),
             'pause_mode' => ($department?->auto_pause_enabled ?? true) ? 'auto' : 'manual',
             'avg_serve_mins' => self::getAvgServeMinutes($department?->id),
+            'eligible_counts' => $department
+                ? $this->transitions->eligibleWaitingCounts($department, $counters)
+                : [],
             'lunch_break_start' => DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00',
             'lunch_break_end' => DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30',
         ]);

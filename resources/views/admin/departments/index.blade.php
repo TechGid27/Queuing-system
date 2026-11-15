@@ -104,15 +104,95 @@
 
                 <div class="px-5 py-3 border-t border-slate-100">
                     <div class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-2">Counters ({{ $department->counters->count() }})</div>
-                    <div class="flex flex-wrap gap-2 mb-3">
+                    <div class="flex flex-col gap-2 mb-3">
                         @forelse($department->counters as $counter)
-                            <form action="{{ route('admin.counters.status', $counter) }}" method="POST" class="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-full border {{ $counter->is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-400' }}">
-                                @csrf
-                                @method('PATCH')
-                                <input type="hidden" name="is_active" value="{{ $counter->is_active ? 0 : 1 }}">
-                                <span>{{ $counter->name }}</span>
-                                <button type="submit" class="underline">{{ $counter->is_active ? 'Active' : 'Off' }}</button>
-                            </form>
+                            <div class="rounded-xl border border-slate-200 px-3 py-2">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <span class="text-xs font-bold text-slate-700">{{ $counter->name }}</span>
+                                        @if($counter->purposes->isEmpty())
+                                            <span class="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">All purposes</span>
+                                        @else
+                                            <span class="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{{ $counter->purposes->count() }} purpose{{ $counter->purposes->count() > 1 ? 's' : '' }}</span>
+                                        @endif
+                                    </div>
+                                    <form action="{{ route('admin.counters.status', $counter) }}" method="POST" class="inline-flex items-center gap-1.5 text-[11px] font-semibold">
+                                        @csrf
+                                        @method('PATCH')
+                                        <input type="hidden" name="is_active" value="{{ $counter->is_active ? 0 : 1 }}">
+                                        <span class="px-2 py-0.5 rounded-full border {{ $counter->is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-400' }}">{{ $counter->is_active ? 'Active' : 'Off' }}</span>
+                                        <button type="submit" class="underline text-slate-500 hover:text-slate-700">{{ $counter->is_active ? 'Disable' : 'Enable' }}</button>
+                                    </form>
+                                </div>
+                                @if($counter->purposes->isNotEmpty())
+                                    <div class="flex flex-wrap gap-1 mt-1.5">
+                                        @foreach($counter->purposes as $purpose)
+                                            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">{{ $purpose->name }}</span>
+                                        @endforeach
+                                    </div>
+                                @endif
+                                <details class="mt-1.5">
+                                    <summary class="text-[11px] font-semibold text-slate-400 hover:text-slate-600 cursor-pointer select-none">Assign purposes</summary>
+                                    <form action="{{ route('admin.counters.purposes', $counter) }}" method="POST" class="mt-2" data-purpose-form="{{ $department->id }}">
+                                        @csrf
+                                        @method('PATCH')
+                                        <div class="flex flex-wrap gap-2 mb-2">
+                                            @forelse($purposes as $purpose)
+                                                @php
+                                                    $takenByOther = $department->counters
+                                                        ->where('id', '!=', $counter->id)
+                                                        ->contains(fn ($other) => $other->purposes->contains('id', $purpose->id));
+                                                @endphp
+                                                <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer hover:bg-slate-100 {{ $takenByOther ? 'opacity-50 cursor-not-allowed' : '' }}" data-purpose-label>
+                                                    <input type="checkbox" name="purpose_ids[]" value="{{ $purpose->id }}"
+                                                        class="rounded border-slate-300 text-primary focus:ring-primary/30"
+
+@push('scripts')
+<script>
+    // A purpose can belong to one window per department: checking it in one
+    // window immediately disables it in the other windows of that department.
+    (function () {
+        function sync(deptId) {
+            var forms = document.querySelectorAll('form[data-purpose-form="' + deptId + '"]');
+            forms.forEach(function (form) {
+                form.querySelectorAll('input[type=checkbox]').forEach(function (box) {
+                    var takenElsewhere = Array.from(forms).some(function (other) {
+                        if (other === form) return false;
+                        return Array.from(other.querySelectorAll('input[type=checkbox]'))
+                            .some(function (o) { return o.value === box.value && o.checked && !o.disabled; });
+                    });
+                    if (takenElsewhere) box.checked = false;
+                    box.disabled = takenElsewhere;
+                    var label = box.closest('[data-purpose-label]');
+                    if (label) label.classList.toggle('opacity-50', takenElsewhere);
+                    if (label) label.classList.toggle('cursor-not-allowed', takenElsewhere);
+                });
+            });
+        }
+        document.querySelectorAll('form[data-purpose-form]').forEach(function (form) {
+            form.addEventListener('change', function () { sync(form.dataset.purposeForm); });
+        });
+        var seen = {};
+        document.querySelectorAll('form[data-purpose-form]').forEach(function (f) {
+            if (!seen[f.dataset.purposeForm]) { seen[f.dataset.purposeForm] = 1; sync(f.dataset.purposeForm); }
+        });
+    })();
+</script>
+@endpush
+                                                        @checked(in_array($purpose->id, $counter->purposes->pluck('id')->all()))
+                                                        @disabled($takenByOther)>
+                                                    {{ $purpose->name }}
+                                                </label>
+                                            @empty
+                                                <span class="text-[11px] text-slate-400">No purposes yet — create them under Purposes first.</span>
+                                            @endforelse
+                                        </div>
+                                        @error('purpose_ids')<p class="text-[11px] text-red-600 mb-1">{{ $message }}</p>@enderror
+                                        <button type="submit" class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800">Save purposes</button>
+                                        <span class="text-[10px] text-slate-400 ml-1.5">Leave all unchecked = serves everything</span>
+                                    </form>
+                                </details>
+                            </div>
                         @empty
                             <span class="text-xs text-slate-400">No counters yet.</span>
                         @endforelse

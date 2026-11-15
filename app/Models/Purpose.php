@@ -18,4 +18,9 @@ class Purpose extends Model
     {
         return $this->hasMany(QueueEntry::class);
     }
+
+    public function counters()
+    {
+        return $this->belongsToMany(Counter::class)->withTimestamps();
+    }
 }

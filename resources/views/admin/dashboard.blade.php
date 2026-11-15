@@ -155,7 +155,16 @@
             @endphp
             <div class="border border-slate-200 rounded-2xl p-4 {{ $isBusy ? 'bg-white' : 'bg-slate-50' }}" data-counter-card="{{ $counter->id }}">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">{{ $counter->name }}</span>
+                    <div class="min-w-0">
+                        <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">{{ $counter->name }}</span>
+                        @if($counter->purposes->isNotEmpty())
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                @foreach($counter->purposes as $purpose)
+                                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-wide">{{ $purpose->name }}</span>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full {{ $counter->queue_paused ? 'bg-orange-100 text-orange-600' : ($isBusy ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400') }}" data-counter-status="{{ $counter->id }}">
                         {{ $counter->queue_paused ? 'PAUSED' : ($isBusy ? 'SERVING' : 'IDLE') }}
                     </span>
@@ -176,6 +185,21 @@
                             </span>
                             @endif
                         </div>
+                        @php
+                            $autoSkipPaused = !$queueOperational || $queuePaused || (bool) $counter->queue_paused;
+                            $skipStartedAt = ($serving->served_at ?? $serving->updated_at)?->timestamp;
+                        @endphp
+                        @if($skipStartedAt)
+                        <div class="mt-2 flex justify-center">
+                            <span data-auto-skip
+                                data-served-at="{{ $skipStartedAt }}"
+                                data-paused="{{ $autoSkipPaused ? '1' : '0' }}"
+                                class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full {{ $autoSkipPaused ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500' }}">
+                                <i class="bi bi-hourglass-split"></i>
+                                <span data-auto-skip-label>{{ $autoSkipPaused ? 'Auto-skip paused' : 'Auto-skip in 3:00' }}</span>
+                            </span>
+                        </div>
+                        @endif
                     </div>
                     <div class="border-t border-slate-100 pt-3 mt-2 flex flex-wrap gap-2 justify-center">
                         @if(auth()->user()->role !== 'admin')
@@ -206,7 +230,9 @@
                             @csrf
                             <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
                             <input type="hidden" name="counter_id" value="{{ $counter->id }}">
-                            <button type="submit" data-queue-running data-empty="{{ $waitingCount == 0 ? '1' : '0' }}" data-current="0" data-counter-id="{{ $counter->id }}" {{ $waitingCount == 0 || !$queueOperational || $queuePaused || $counter->queue_paused ? 'disabled' : '' }}
+                            @php $eligible = ($eligibleCounts ?? [])[$counter->id] ?? 0; @endphp
+                            <button type="submit" data-queue-running data-empty="{{ $eligible == 0 ? '1' : '0' }}" data-current="0" data-counter-id="{{ $counter->id }}" {{ $eligible == 0 || !$queueOperational || $queuePaused || $counter->queue_paused ? 'disabled' : '' }}
+                                @if($eligible == 0 && $waitingCount > 0) title="No waiting tickets match this window's assigned purposes" @endif
                                 class="inline-flex items-center gap-2 bg-primary hover:bg-primary-dark text-white text-xs font-semibold px-4 py-2 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                                 <i class="bi bi-play-circle-fill"></i> Call Next here
                             </button>
@@ -228,6 +254,21 @@
                 <div class="ticket-xl text-red-600 mb-3">{{ $currentServing->ticket_number }}</div>
                 <div class="text-lg font-bold text-slate-800">{{ $currentServing->name }}</div>
                 <div class="text-sm text-slate-400 mt-1">{{ $currentServing->purpose }}</div>
+                @php
+                    $legacySkipPaused = !$queueOperational || $queuePaused;
+                    $legacySkipStartedAt = ($currentServing->served_at ?? $currentServing->updated_at)?->timestamp;
+                @endphp
+                @if($legacySkipStartedAt)
+                <div class="mt-2 flex justify-center">
+                    <span data-auto-skip
+                        data-served-at="{{ $legacySkipStartedAt }}"
+                        data-paused="{{ $legacySkipPaused ? '1' : '0' }}"
+                        class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full {{ $legacySkipPaused ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500' }}">
+                        <i class="bi bi-hourglass-split"></i>
+                        <span data-auto-skip-label>{{ $legacySkipPaused ? 'Auto-skip paused' : 'Auto-skip in 3:00' }}</span>
+                    </span>
+                </div>
+                @endif
             </div>
         @endif
         </div>{{-- #now-serving-panel --}}
@@ -325,6 +366,11 @@
     body.focus-mode #now-serving-panel [data-counter-card].focused-window { display: block; }
     body.focus-mode .ticket-lg { font-size: 4rem; line-height: 1; }
     body.focus-mode #waiting-list-body { max-height: 65vh; }
+    /* Selecting a window in "My window" filters the grid to that window only */
+    #now-serving-panel.window-filtered { grid-template-columns: 1fr !important; }
+    #now-serving-panel.window-filtered [data-counter-card] { display: none; }
+    #now-serving-panel.window-filtered [data-counter-card].focused-window { display: block; }
+    #now-serving-panel.window-filtered [data-counter-card].focused-window .ticket-lg { font-size: 3rem; line-height: 1; }
 </style>
 <script>
     const TOGGLE_PAUSE_URL  = "{{ route('admin.togglePause') }}";
@@ -622,44 +668,46 @@
         }
     }
 
-    // ── Auto-skip countdown timer ─────────────────────────────────────────────
+    // ── Auto-skip countdown timer (per serving window card) ───────────────────
     const AUTO_SKIP_SECONDS = 3 * 60;
 
     function updateAutoSkipTimer() {
-        const timerEl = document.getElementById('auto-skip-timer');
-        const labelEl = document.getElementById('auto-skip-label');
-        if (!timerEl || !labelEl) return;
+        document.querySelectorAll('[data-auto-skip]').forEach(timerEl => {
+            const labelEl = timerEl.querySelector('[data-auto-skip-label]');
+            if (!labelEl) return;
 
-        if (queueIsPaused || !QUEUE_OPERATIONAL) {
-            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-yellow-100 text-yellow-700';
-            labelEl.innerText = 'Auto-skip paused';
-            return;
-        }
+            const paused = timerEl.dataset.paused === '1' || queueIsPaused || !QUEUE_OPERATIONAL;
+            if (paused) {
+                timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-yellow-100 text-yellow-700';
+                labelEl.innerText = 'Auto-skip paused';
+                return;
+            }
 
-        const servedAt  = parseInt(timerEl.dataset.servedAt, 10);
-        const now       = Math.floor(Date.now() / 1000);
-        const elapsed   = now - servedAt;
-        const remaining = AUTO_SKIP_SECONDS - elapsed;
+            const servedAt  = parseInt(timerEl.dataset.servedAt, 10);
+            const now       = Math.floor(Date.now() / 1000);
+            const elapsed   = now - servedAt;
+            const remaining = AUTO_SKIP_SECONDS - elapsed;
 
-        if (remaining <= 0) {
-            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700';
-            labelEl.innerText = 'Auto-skipping...';
-            return;
-        }
+            if (remaining <= 0) {
+                timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700';
+                labelEl.innerText = 'Auto-skipping...';
+                return;
+            }
 
-        const mins    = Math.floor(remaining / 60);
-        const secs    = remaining % 60;
-        const display = mins + ':' + String(secs).padStart(2, '0');
+            const mins    = Math.floor(remaining / 60);
+            const secs    = remaining % 60;
+            const display = mins + ':' + String(secs).padStart(2, '0');
 
-        if (remaining <= 30) {
-            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700 animate-pulse';
-        } else if (remaining <= 60) {
-            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-orange-100 text-orange-700';
-        } else {
-            timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500';
-        }
+            if (remaining <= 30) {
+                timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700 animate-pulse';
+            } else if (remaining <= 60) {
+                timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-orange-100 text-orange-700';
+            } else {
+                timerEl.className = 'inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-500';
+            }
 
-        labelEl.innerText = 'Auto-skip in ' + display;
+            labelEl.innerText = 'Auto-skip in ' + display;
+        });
     }
 
     // ── Window selection + focus/fullscreen mode ─────────────────────────────
@@ -684,6 +732,10 @@
                 focusedWindowId && String(card.getAttribute('data-counter-card')) === focusedWindowId
             );
         });
+
+        // Only the selected window is shown once a selection is made.
+        const panel = document.getElementById('now-serving-panel');
+        if (panel) panel.classList.toggle('window-filtered', !!focusedWindowId);
 
         if (focusModeBtn) focusModeBtn.disabled = !focusedWindowId;
 

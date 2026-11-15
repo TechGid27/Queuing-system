@@ -84,6 +84,7 @@ Route::middleware(['auth:web', 'is_admin'])->group(function () {
     Route::patch('/admin/counters/{counter}/status', [DepartmentController::class, 'updateCounterStatus'])->name('admin.counters.status');
 
     Route::resource('/admin/purposes', PurposeController::class)
+    Route::patch('/admin/counters/{counter}/purposes', [DepartmentController::class, 'updateCounterPurposes'])->name('admin.counters.purposes');
         ->only(['index', 'store', 'update', 'destroy'])
         ->names([
             'index' => 'admin.purposes.index',

@@ -14,12 +14,16 @@ class DepartmentController extends Controller
 {
     public function index()
     {
-        $departments = Department::with(['staff' => fn ($query) => $query->orderBy('name'), 'counters' => fn ($query) => $query->orderBy('id')])
+        $departments = Department::withCount('staff')->with([
+            'counters' => fn ($query) => $query->orderBy('id')->with('purposes'),
+        ])
             ->withCount('queueEntries')
             ->orderBy('name')
             ->get();
 
-        return view('admin.departments.index', compact('departments'));
+        $purposes = \App\Models\Purpose::where('is_active', true)->orderBy('name')->get();
+
+        return view('admin.departments.index', compact('departments', 'purposes'));
     }
 
     public function store(Request $request)
@@ -111,6 +115,40 @@ class DepartmentController extends Controller
 
     public function storeCounter(Request $request)
     {
+
+    public function updateCounterPurposes(Request $request, \App\Models\Counter $counter)
+    {
+        $validated = $request->validate([
+            'purpose_ids' => 'nullable|array',
+            'purpose_ids.*' => 'integer|exists:purposes,id',
+        ]);
+
+        $purposeIds = array_values(array_unique($validated['purpose_ids'] ?? []));
+
+        // A purpose can only belong to one window per department.
+        $taken = \Illuminate\Support\Facades\DB::table('counter_purpose')
+            ->join('counters', 'counters.id', '=', 'counter_purpose.counter_id')
+            ->join('purposes', 'purposes.id', '=', 'counter_purpose.purpose_id')
+            ->where('counters.department_id', $counter->department_id)
+            ->where('counters.id', '!=', $counter->id)
+            ->whereIn('counter_purpose.purpose_id', $purposeIds)
+            ->pluck('purposes.name');
+
+        if ($taken->isNotEmpty()) {
+            return back()->withErrors([
+                'purpose_ids' => 'Already assigned to another window: '.$taken->unique()->implode(', ').'.',
+            ]);
+        }
+
+        $counter->purposes()->sync($purposeIds);
+
+        $assigned = $counter->purposes()->pluck('name');
+        $summary = $assigned->isEmpty()
+            ? "{$counter->name} now serves all purposes."
+            : "{$counter->name} now handles: {$assigned->implode(', ')}.";
+
+        return back()->with('success', $summary);
+    }
         $validated = $request->validate([
             'department_id' => 'required|integer|exists:departments,id',
             'name' => [

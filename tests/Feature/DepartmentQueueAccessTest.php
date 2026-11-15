@@ -50,7 +50,10 @@ class DepartmentQueueAccessTest extends TestCase
             ->assertSessionHasNoErrors();
 
         $this->assertDatabaseHas('departments', ['name' => 'Registrar']);
-        $this->get(route('admin.departments.index'))->assertOk()->assertSee('Registrar');
+        $this->get(route('admin.departments.index'))
+            ->assertOk()
+            ->assertSee('Registrar')
+            ->assertSee('Assign purposes');
         $this->get(route('admin.reports'))->assertOk();
     }
 
