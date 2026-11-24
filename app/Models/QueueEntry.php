@@ -15,6 +15,7 @@ class QueueEntry extends Model
         'name',
         'purpose',
         'phone_number',
+        'source',
         'status',
         'served_at',
         'completed_at',

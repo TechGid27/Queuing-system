@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\QueueUpdated;
 use App\Models\Department;
+use App\Models\Purpose;
 use App\Models\QueueAction;
 use App\Models\QueueEntry;
 use App\Services\QueueMetricsService;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class StaffController extends Controller
 {
@@ -168,6 +170,7 @@ class StaffController extends Controller
         $lunchBreakStart = DB::table('settings')->where('key', 'lunch_break_start')->value('value') ?? '12:00';
         $lunchBreakEnd = DB::table('settings')->where('key', 'lunch_break_end')->value('value') ?? '13:30';
         $servingCount = $currentServings->count();
+        $purposes = Purpose::where('is_active', true)->orderBy('name')->get();
 
         return view('admin.dashboard', compact(
             'currentServing',
@@ -187,8 +190,136 @@ class StaffController extends Controller
             'selectedDepartment',
             'departments',
             'isAdmin',
-            'eligibleCounts'
+            'eligibleCounts',
+            'purposes'
         ));
+    }
+
+    /**
+     * Staff-assisted walk-in ticket (e.g. seniors with no cellphone).
+     * Creates a Waiting entry with guest_id/phone_number null and source=walk_in.
+     */
+    public function storeWalkIn(Request $request)
+    {
+        $this->denyAdminQueueActions();
+
+        $department = $this->resolveDepartment($request);
+        abort_unless($department, 404);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:100',
+            'purpose_id' => 'required',
+            'other_purpose' => 'nullable|string|max:255',
+            'department_id' => 'nullable|integer|exists:departments,id',
+        ]);
+
+        if ($validated['purpose_id'] === 'other') {
+            $purposeName = trim($validated['other_purpose'] ?? '') ?: 'Other';
+            $purposeId = null;
+        } else {
+            $purpose = Purpose::where('is_active', true)->find($validated['purpose_id']);
+            if (! $purpose) {
+                return back()->withErrors(['purpose_id' => 'Please select a valid purpose.'])->withInput();
+            }
+            $purposeName = $purpose->name;
+            $purposeId = $purpose->id;
+        }
+
+        $actor = Auth::guard('web')->user();
+        $maxCapacity = (int) config('queue_system.max_capacity', 50);
+        $today = today()->toDateString();
+        $name = trim($validated['name']);
+
+        try {
+            $queueEntry = DB::transaction(function () use ($department, $name, $purposeId, $purposeName, $maxCapacity, $today) {
+                $lockedDepartment = Department::whereKey($department->id)->lockForUpdate()->firstOrFail();
+
+                if (! $lockedDepartment->is_active) {
+                    throw ValidationException::withMessages([
+                        'name' => 'Activate this department before adding a walk-in.',
+                    ]);
+                }
+
+                if ($lockedDepartment->queue_paused) {
+                    throw ValidationException::withMessages([
+                        'name' => 'Resume this department queue before adding a walk-in.',
+                    ]);
+                }
+
+                $departmentQueue = QueueEntry::where('department_id', $lockedDepartment->id)
+                    ->where('queue_date', $today);
+
+                // Same person already waiting/serving today (walk-in or online).
+                $hasActiveTicket = (clone $departmentQueue)
+                    ->where('name', $name)
+                    ->whereIn('status', ['waiting', 'serving'])
+                    ->exists();
+
+                if ($hasActiveTicket) {
+                    throw ValidationException::withMessages([
+                        'name' => "{$name} already has an active ticket in this queue.",
+                    ]);
+                }
+
+                $currentCount = (clone $departmentQueue)
+                    ->whereIn('status', ['waiting', 'serving'])
+                    ->count();
+
+                if ($maxCapacity > 0 && $currentCount >= $maxCapacity) {
+                    throw ValidationException::withMessages([
+                        'name' => "The queue is currently full (max {$maxCapacity}). Please try again later.",
+                    ]);
+                }
+
+                $sequence = $this->nextTicketSequence($departmentQueue);
+
+                return QueueEntry::create([
+                    'ticket_number' => str_pad((string) $sequence, 3, '0', STR_PAD_LEFT),
+                    'name' => $name,
+                    'purpose' => $purposeName,
+                    'purpose_id' => $purposeId,
+                    'phone_number' => null,
+                    'status' => 'waiting',
+                    'guest_id' => null,
+                    'department_id' => $lockedDepartment->id,
+                    'queue_date' => $today,
+                    'source' => 'walk_in',
+                ]);
+            });
+        } catch (ValidationException $exception) {
+            return back()->withErrors($exception->errors())->withInput();
+        }
+
+        QueueAction::create([
+            'department_id' => $department->id,
+            'queue_entry_id' => $queueEntry->id,
+            'actor_id' => $actor?->id,
+            'action' => 'walk_in_created',
+            'ticket_number' => $queueEntry->ticket_number,
+            'from_status' => null,
+            'to_status' => 'waiting',
+            'metadata' => ['source' => 'walk_in', 'name' => $name],
+        ]);
+
+        $this->broadcastQueueState($department->id);
+
+        return back()
+            ->with('success', "Walk-in ticket {$queueEntry->ticket_number} added for {$name}.")
+            ->with('my_number', $queueEntry->ticket_number);
+    }
+
+    private function nextTicketSequence($query): int
+    {
+        $cast = match (DB::connection()->getDriverName()) {
+            'sqlite', 'pgsql' => 'CAST(ticket_number AS INTEGER)',
+            default => 'CAST(ticket_number AS UNSIGNED)',
+        };
+
+        $max = (clone $query)
+            ->selectRaw("MAX({$cast}) as max_ticket")
+            ->first()?->max_ticket;
+
+        return (int) $max + 1;
     }
 
     public function togglePause(Request $request)
@@ -565,7 +696,7 @@ class StaffController extends Controller
         $waitingStudents = (clone $queue)
             ->where('status', 'waiting')
             ->orderBy('id')
-            ->paginate(10, ['id', 'ticket_number', 'name', 'purpose']);
+            ->paginate(10, ['id', 'ticket_number', 'name', 'purpose', 'source']);
         $currentServings = (clone $queue)
             ->where('status', 'serving')
             ->with(['counter', 'servedBy'])

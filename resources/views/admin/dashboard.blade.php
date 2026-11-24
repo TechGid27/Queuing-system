@@ -77,6 +77,12 @@
             <h2 class="text-sm font-bold text-slate-500 uppercase tracking-widest">Now Serving</h2>
             <div class="flex items-center gap-2 flex-wrap justify-end">
                 @if(auth()->user()->role !== 'admin')
+                <button type="button" id="walk-in-btn"
+                    {{ !$queueOperational || $queuePaused ? 'disabled' : '' }}
+                    onclick="openWalkInModal()"
+                    class="inline-flex items-center gap-1.5 bg-primary hover:bg-blue-700 border border-primary text-white text-[11px] font-bold px-3 py-1.5 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="bi bi-person-plus-fill"></i> Walk-in
+                </button>
                 <div class="inline-flex items-center bg-slate-100 rounded-full p-0.5" role="group" aria-label="Pause mode">
                     <button type="button" id="mode-auto-btn" onclick="sendPauseMode('auto')"
                         class="text-[11px] font-bold px-3 py-1 rounded-full transition-colors {{ ($autoPauseEnabled ?? true) ? 'bg-white shadow text-slate-800' : 'text-slate-400' }}">
@@ -176,9 +182,15 @@
                         <div class="text-sm font-bold text-slate-800">{{ $serving->name }}</div>
                         <div class="text-xs text-slate-400 mt-0.5">{{ $serving->purpose }}</div>
                         <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
+                            @if($serving->phone_number)
                             <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
                                 <i class="bi bi-phone"></i> {{ $serving->phone_number }}
                             </span>
+                            @elseif(($serving->source ?? 'online') === 'walk_in')
+                            <span class="inline-flex items-center gap-1 bg-purple-50 text-purple-700 text-xs font-semibold px-3 py-1 rounded-full">
+                                <i class="bi bi-person-walking"></i> Walk-in
+                            </span>
+                            @endif
                             @if($serving->servedBy)
                             <span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-xs font-semibold px-3 py-1 rounded-full">
                                 <i class="bi bi-person"></i> {{ $serving->servedBy->name }}
@@ -295,6 +307,11 @@
                     <span class="bg-slate-100 text-slate-500 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 max-w-[80px] truncate">
                         {{ $student->purpose }}
                     </span>
+                    @if(($student->source ?? 'online') === 'walk_in')
+                    <span class="bg-purple-50 text-purple-600 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" title="Walk-in (staff-assisted)">
+                        <i class="bi bi-person-walking"></i>
+                    </span>
+                    @endif
                 </div>
             @empty
                 <div class="flex flex-col items-center justify-center py-12 text-slate-400">
@@ -347,6 +364,61 @@
         @endif
     </div>
 
+</div>
+
+{{-- Walk-in modal --}}
+<div id="walk-in-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50" onclick="closeWalkInModal()"></div>
+    <div class="relative mx-auto mt-24 w-[min(420px,92vw)] bg-white rounded-2xl shadow-2xl border border-slate-200 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-widest">Add Walk-in Ticket</h3>
+            <button type="button" onclick="closeWalkInModal()" class="text-slate-400 hover:text-slate-600 text-lg leading-none" aria-label="Close">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <p class="text-xs text-slate-500 mb-4">For students without a cellphone (e.g. seniors). No SMS will be sent.</p>
+        <form action="{{ route('admin.walkIn') }}" method="POST" id="walk-in-form">
+            @csrf
+            <input type="hidden" name="department_id" value="{{ $selectedDepartment?->id }}">
+            <div class="mb-3">
+                <label for="walk-in-name" class="block text-xs font-semibold text-slate-600 mb-1">Full name <span class="text-red-500">*</span></label>
+                <input type="text" id="walk-in-name" name="name" required maxlength="100"
+                    value="{{ old('name') }}"
+                    placeholder="e.g. Juan Dela Cruz"
+                    class="w-full px-3.5 py-2.5 rounded-xl border {{ $errors->has('name') ? 'border-red-400' : 'border-slate-200' }} text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                @error('name')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
+            </div>
+            <div class="mb-4">
+                <label for="walk-in-purpose" class="block text-xs font-semibold text-slate-600 mb-1">Purpose <span class="text-red-500">*</span></label>
+                <select id="walk-in-purpose" name="purpose_id" required
+                    class="w-full px-3.5 py-2.5 rounded-xl border {{ $errors->has('purpose_id') ? 'border-red-400' : 'border-slate-200' }} text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary bg-white">
+                    <option value="">Select purpose…</option>
+                    @foreach($purposes as $purpose)
+                        <option value="{{ $purpose->id }}" @selected(old('purpose_id') == $purpose->id)>{{ $purpose->name }}</option>
+                    @endforeach
+                    <option value="other" @selected(old('purpose_id') === 'other')>Other…</option>
+                </select>
+                @error('purpose_id')<p class="text-red-500 text-xs mt-1">{{ $message }}</p>@enderror
+            </div>
+            <div class="mb-4 hidden" id="walk-in-other-wrap">
+                <label for="walk-in-other" class="block text-xs font-semibold text-slate-600 mb-1">Describe purpose</label>
+                <input type="text" id="walk-in-other" name="other_purpose" maxlength="255"
+                    value="{{ old('other_purpose') }}"
+                    placeholder="e.g. Pay tuition fee"
+                    class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+            </div>
+            <div class="flex gap-2 justify-end">
+                <button type="button" onclick="closeWalkInModal()"
+                    class="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                    class="px-4 py-2.5 rounded-xl bg-primary hover:bg-blue-700 text-white text-xs font-bold transition-colors">
+                    <i class="bi bi-ticket-detailed mr-1"></i> Issue Ticket
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 @endsection
 
@@ -807,5 +879,38 @@
     refreshPauseStateUI();
     updateAutoSkipTimer();
     setInterval(updateAutoSkipTimer, 1000);
+
+    // ── Walk-in modal ────────────────────────────────────────────────────────
+    function openWalkInModal() {
+        const modal = document.getElementById('walk-in-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        const nameInput = document.getElementById('walk-in-name');
+        if (nameInput) nameInput.focus();
+    }
+
+    function closeWalkInModal() {
+        const modal = document.getElementById('walk-in-modal');
+        if (!modal) return;
+        modal.classList.add('hidden');
+        const form = document.getElementById('walk-in-form');
+        if (form) form.reset();
+        toggleWalkInOther();
+    }
+
+    function toggleWalkInOther() {
+        const select = document.getElementById('walk-in-purpose');
+        const wrap = document.getElementById('walk-in-other-wrap');
+        if (!select || !wrap) return;
+        if (select.value === 'other') {
+            wrap.classList.remove('hidden');
+        } else {
+            wrap.classList.add('hidden');
+        }
+    }
+
+    const walkInPurpose = document.getElementById('walk-in-purpose');
+    if (walkInPurpose) walkInPurpose.addEventListener('change', toggleWalkInOther);
+    toggleWalkInOther();
 </script>
 @endsection

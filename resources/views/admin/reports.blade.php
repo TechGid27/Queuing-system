@@ -105,7 +105,15 @@
                     <td class="px-5 py-3.5 hidden md:table-cell">
                         <span class="bg-slate-100 text-slate-600 text-xs font-medium px-2.5 py-1 rounded-full">{{ $entry->purpose }}</span>
                     </td>
-                    <td class="px-5 py-3.5 text-slate-400 text-xs hidden lg:table-cell">{{ $entry->phone_number }}</td>
+                    <td class="px-5 py-3.5 text-slate-400 text-xs hidden lg:table-cell">
+                        @if($entry->phone_number)
+                            {{ $entry->phone_number }}
+                        @elseif(($entry->source ?? 'online') === 'walk_in')
+                            <span class="bg-purple-50 text-purple-600 text-[10px] font-semibold px-2 py-0.5 rounded-full">Walk-in</span>
+                        @else
+                            —
+                        @endif
+                    </td>
                     <td class="px-5 py-3.5">
                         @php
                             $cls = match($entry->status) {

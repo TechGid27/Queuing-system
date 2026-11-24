@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('ticket_number');
             $table->string('name');
             $table->string('purpose');
-            $table->string('phone_number', 15);
+            $table->string('phone_number', 15)->nullable();
             $table->enum('status', ['waiting', 'serving', 'completed', 'no_response', 'skipped'])->default('waiting');
             $table->timestamp('served_at')->nullable();
             $table->timestamp('completed_at')->nullable();
