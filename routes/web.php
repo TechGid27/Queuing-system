@@ -65,7 +65,7 @@ Route::middleware(['auth:web', 'is_staff'])->group(function () {
     Route::get('/admin/waiting-list', [StaffController::class, 'waitingList'])->name('admin.waitingList');
     Route::post('/admin/toggle-pause', [StaffController::class, 'togglePause'])->name('admin.togglePause');
     Route::post('/admin/pause-mode', [StaffController::class, 'updatePauseMode'])->name('admin.pauseMode');
-
+    Route::post('/admin/walk-in', [StaffController::class, 'storeWalkIn'])->name('admin.walkIn');
 });
 
 // ─── Administrator-only management ───────────────────────────────────────────

@@ -140,7 +140,7 @@ $PHP artisan schedule:work
 ```
 waiting → serving → completed
    │          └────→ no_response (skip / 3-min auto-skip)
-   └─────────────── full queue (QUEUE_MAX_CAPACITY, default 50)
+   └─────────────── full queue (QUEUE_MAX_CAPACITY per department, default 50)
 ```
 
 1. **Join** — Guest/student picks a department + purpose at `/student/index`
@@ -175,7 +175,7 @@ Password reset uses the same SMS OTP channel.
 |---|---|
 | Guest/Student (`student` guard) | Join queue, view own ticket + position, TV |
 | Staff (`web` guard, locked to 1 department) | Call Next / Skip / Complete, pause toggle, reports |
-| Admin (`web` guard, all departments) | Everything + departments, staff, counters, purposes, audit log, PDF reports |
+| Admin (`web` guard, all departments) | Monitoring all queues + departments, staff, counters, purposes, analytics, audit log, PDF reports (queue actions like Call Next/Skip are staff-only) |
 
 > After login, **admins land on `/admin/overview`**; staff land on `/admin`.
 
@@ -198,11 +198,14 @@ app/
 │   ├── StaffController.php      # call-next/skip/complete, pause, reports, avg calc
 │   ├── DepartmentController.php # departments, staff assignment, counters
 │   ├── AdminOverviewController.php  # cross-department overview + audit log
+│   ├── AdminAnalyticsController.php # KPIs, hourly/trend, per-dept/purpose
+│   ├── StaffManagementController.php# staff list/create/activate
 │   ├── PurposeController.php    # purposes CRUD + active list API
 │   └── AuthController.php       # login, register, OTP, password reset
 ├── Events/QueueUpdated.php      # ShouldBroadcastNow → queue.{dept} / queue.updated
 ├── Services/
 │   ├── QueueTransitionService.php  # guarded status transitions + audit rows
+│   ├── QueueMetricsService.php     # cached avg serve minutes (clamped 1–30)
 │   └── SmsService.php           # Textbee sender with log fallback
 ├── Models/  Department, Counter, QueueEntry, Guest, User, Purpose,
 │            PhoneOtp, QueueAction, SmsNotification
@@ -242,7 +245,8 @@ app/
 | Add windows | Admin → Departments & Staff → counters (1–20, toggle Active/Off; busy ones can't be turned off) |
 | TV display | `/tv?department_id=1` — Now Serving grid per counter + Next + Waiting |
 | Reports (PDF) | Admin → Reports → filter by date/department → Download |
-| Change staff invite / lunch hours | `settings` table (`staff_invite_code`, `lunch_break_start`, `lunch_break_end`) |
+| Change lunch hours | `settings` table (`lunch_break_start`, `lunch_break_end`) |
+| Raise/lower queue cap | `.env` → `QUEUE_MAX_CAPACITY` (default 50 per department; `0` = unlimited), then re-serve |
 
 ## 5. Testing
 
@@ -264,11 +268,23 @@ refuses to run against a non-testing database. If you see
 (or the Windows XAMPP binary) first — a stale `bootstrap/cache/config.php`
 overrides the test env.
 
-Current status: **30 tests passing (132 assertions)** in
-`AdminOverviewTest`, `DepartmentQueueAccessTest`, `GuestQueueFlowTest`,
-`ReliabilityTest`, `StaffQueueConsoleTest` — multi-counter concurrency,
-pause/mode audit, auto-skip locking. CI (`.github/workflows/laravel.yml`)
-runs the same suite on PHP 8.2.
+Current status: **86 tests passing** across 13 files —
+
+| Suite | Coverage |
+|---|---|
+| `DepartmentQueueAccessTest` (14) | dept CRUD, cross-dept isolation, deactivation pauses queue |
+| `PurposeRoutingTest` (11) | window purpose routing, overflow, paused fall-through |
+| `StaffQueueConsoleTest` (12) | multi-counter concurrency, pause modes, auto-skip |
+| `StudentWindowDisplayTest` (8) | join flow, window display in status API |
+| `GuestQueueFlowTest` (7) | OTP register/login, guest queue ownership |
+| `WalkInQueueTest` (9) | staff walk-in tickets, dedupe, capacity, no-SMS |
+| `AdminAnalyticsTest` (6) | range/KPI aggregation, access control |
+| `ReliabilityTest` (6) | transition audit, SMS fallback, audit log |
+| `LoginRedirectTest` (5) | role-based post-login redirects |
+| `AdminOverviewTest` (3) | overview metrics + status JSON |
+| `ExampleTest` / `SmsMessageTest` (5) | baseline response + security headers, SMS text |
+
+CI (`.github/workflows/laravel.yml`) runs the same suite on PHP 8.2.
 
 ## 6. Troubleshooting
 

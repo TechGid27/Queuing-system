@@ -467,6 +467,7 @@ class QueueController extends Controller
                 'guest_id' => $lockedGuest->id,
                 'department_id' => $department->id,
                 'queue_date' => $today,
+                'source' => 'online',
             ]);
         });
 

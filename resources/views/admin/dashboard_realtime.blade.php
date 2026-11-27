@@ -73,6 +73,7 @@
                                 const name = escapeHtml(s.name);
                                 const purpose = escapeHtml(s.purpose);
                                 const phoneNumber = escapeHtml(s.phone_number);
+                                const isWalkIn = !s.phone_number && s.source === 'walk_in';
                                 const staffName = escapeHtml(s.served_by_name ?? s.servedBy?.name ?? '');
                                 const rejectUrl = escapeHtml(queueActionUrl(REJECT_URL_TEMPLATE, s.id));
                                 const completeUrl = escapeHtml(queueActionUrl(COMPLETE_URL_TEMPLATE, s.id));
@@ -111,9 +112,11 @@
                                         <div class="text-sm font-bold text-slate-800">${name}</div>
                                         <div class="text-xs text-slate-400 mt-0.5">${purpose}</div>
                                         <div class="mt-2 flex items-center justify-center gap-2 flex-wrap">
-                                            <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
+                                            ${phoneNumber ? `<span class="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full">
                                                 <i class="bi bi-phone"></i> ${phoneNumber}
-                                            </span>
+                                            </span>` : (isWalkIn ? `<span class="inline-flex items-center gap-1 bg-purple-50 text-purple-700 text-xs font-semibold px-3 py-1 rounded-full">
+                                                <i class="bi bi-person-walking"></i> Walk-in
+                                            </span>` : '')}
                                             ${staffName ? `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 text-xs font-semibold px-3 py-1 rounded-full"><i class="bi bi-person"></i> ${staffName}</span>` : ''}
                                         </div>
                                         ${autoSkipBadge}
@@ -209,6 +212,7 @@
                         <span class="bg-slate-100 text-slate-500 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 max-w-[80px] truncate">
                             ${escapeHtml(s.purpose)}
                         </span>
+                        ${s.source === 'walk_in' ? `<span class="bg-purple-50 text-purple-600 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" title="Walk-in"><i class="bi bi-person-walking"></i></span>` : ''}
                     </div>`).join('');
                 const paginationSummary = document.getElementById('pagination-summary');
                 if (paginationSummary && data.pagination) {

@@ -19,9 +19,15 @@ class GuestQueueFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.recaptcha.secret_key' => null]);
+    }
+
     public function test_guest_registration_creates_a_pending_guest_and_otp(): void
     {
-        config(['services.recaptcha.secret' => null]);
         $sentOtp = null;
         $this->mock(SmsService::class, function (MockInterface $mock) use (&$sentOtp) {
             $mock->shouldReceive('sendOtp')->once()->andReturnUsing(function ($phone, $otp) use (&$sentOtp) {

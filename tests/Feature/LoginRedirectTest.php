@@ -12,6 +12,13 @@ class LoginRedirectTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.recaptcha.secret_key' => null]);
+    }
+
     public function test_logged_in_admin_visiting_login_page_goes_to_overview(): void
     {
         $admin = $this->createUser('admin', 'redirect-admin@example.com');
